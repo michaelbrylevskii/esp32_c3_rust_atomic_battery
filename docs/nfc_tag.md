@@ -25,6 +25,7 @@
 - Разбирать его в key-value набор
 - Собирать key-value набор обратно
 - Записывать его на метку
+- Давать `esp-idf` helper для быстрого создания reader'а через I2C
 
 ## Что именно хранится на метке
 
@@ -150,20 +151,62 @@ High-level обёртка над `Pn532`.
 - `read_kv_store()`
 - `write_kv_store(&store)`
 
+### `nfc_tag::esp_idf`
+
+Вспомогательный слой для проектов на `esp-idf-svc`.
+
+Полезные элементы:
+
+- `esp_idf::StdTimer`
+- `esp_idf::EspNfcTag`
+- `esp_idf::new_with_driver(i2c_driver)`
+- `esp_idf::new(i2c, sda, scl, baudrate)`
+- `esp_idf::new_default(i2c, sda, scl)`
+
 ## Типичный сценарий использования
 
-### 1. Создать `Pn532`
+### 1. Создать `NfcTag` для `esp-idf`
 
-Сначала поднимается I2C, затем создаётся `Pn532`, затем поверх него `NfcTag`.
+Теперь для типового случая не нужно руками собирать `I2cDriver`, `I2CInterface`, `StdTimer` и `Pn532`.
 
-Пример из проекта:
+Достаточно передать I2C peripheral и пины:
 
 ```rust
-let interface = I2CInterface { i2c };
-let timer = StdTimer::new();
-let pn532: Pn532<_, _, 64> = Pn532::new(interface, timer);
-let mut nfc = NfcTag::new(pn532);
+let mut nfc = nfc_tag::esp_idf::new_default(
+    p.i2c0,
+    p.pins.gpio3,
+    p.pins.gpio4,
+)?;
 ```
+
+Если нужна не стандартная, а своя скорость шины:
+
+```rust
+use esp_idf_svc::hal::units::Hertz;
+
+let mut nfc = nfc_tag::esp_idf::new(
+    p.i2c0,
+    p.pins.gpio3,
+    p.pins.gpio4,
+    Hertz(400_000),
+)?;
+```
+
+Что принимает helper снаружи:
+
+- I2C peripheral
+- SDA pin
+- SCL pin
+- при необходимости baudrate
+
+Что helper делает внутри:
+
+- собирает `I2cConfig`
+- поднимает `I2cDriver`
+- создаёт `I2CInterface`
+- создаёт `StdTimer`
+- создаёт `Pn532`
+- создаёт `NfcTag`
 
 ### 2. Инициализировать PN532
 
@@ -308,8 +351,7 @@ if let Some(tag) = nfc.poll_tag(Duration::from_millis(1000))? {
 
 Сейчас там:
 
-- поднимается I2C на `GPIO3` / `GPIO4`
-- создаётся `NfcTag`
+- создаётся `NfcTag` через `nfc_tag::esp_idf::new_default(...)`
 - вызывается `init_default()`
 - печатается firmware version
 - собирается demo `KvStore`

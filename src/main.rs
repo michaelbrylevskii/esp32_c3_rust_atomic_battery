@@ -1,23 +1,20 @@
-use core::convert::Infallible;
-use esp32_c3_rust_atomic_battery::nfc_tag::{KvFormatError, KvStore, NfcError, NfcTag};
+use esp32_c3_rust_atomic_battery::nfc_tag::{self, KvFormatError, KvStore, NfcError};
 use esp_idf_svc::hal::delay::Delay;
 use esp_idf_svc::hal::gpio::Pull;
 use esp_idf_svc::hal::{
     delay::FreeRtos,
     gpio::{Level, PinDriver},
-    i2c::{I2cConfig, I2cDriver, I2cError},
+    i2c::I2cError,
     peripherals::Peripherals,
-    units::*,
 };
 use esp_idf_svc::sys::EspError;
 use std::fmt;
 
 use tm1637_embedded_hal::{formatters, Brightness, TM1637Builder};
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use log::{error, info, warn};
-use pn532::{i2c::I2CInterface, CountDown, Pn532};
 
 const WRITE_DEMO: bool = false;
 
@@ -142,19 +139,11 @@ fn test_display() -> Result<(), EspError> {
 fn test_reader() -> Result<(), AppError> {
     let p = Peripherals::take()?;
 
-    let config = I2cConfig::new().baudrate(100.kHz().into());
-    let i2c = I2cDriver::new(
+    let mut nfc = nfc_tag::esp_idf::new_default(
         p.i2c0,
         p.pins.gpio3, // SDA
         p.pins.gpio4, // SCL
-        &config,
     )?;
-
-    let interface = I2CInterface { i2c };
-    let timer = StdTimer::new();
-
-    let pn532: Pn532<_, _, 64> = Pn532::new(interface, timer);
-    let mut nfc = NfcTag::new(pn532);
 
     nfc.init_default()?;
 
@@ -214,34 +203,6 @@ fn test_reader() -> Result<(), AppError> {
                 error!("PN532 error: {e}");
                 FreeRtos::delay_ms(200);
             }
-        }
-    }
-}
-
-struct StdTimer {
-    deadline: Option<Instant>,
-}
-
-impl StdTimer {
-    fn new() -> Self {
-        Self { deadline: None }
-    }
-}
-
-impl CountDown for StdTimer {
-    type Time = Duration;
-
-    fn start<T>(&mut self, count: T)
-    where
-        T: Into<Self::Time>,
-    {
-        self.deadline = Some(Instant::now() + count.into());
-    }
-
-    fn wait(&mut self) -> pn532::nb::Result<(), Infallible> {
-        match self.deadline {
-            Some(deadline) if Instant::now() >= deadline => Ok(()),
-            _ => Err(pn532::nb::Error::WouldBlock),
         }
     }
 }
