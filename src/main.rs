@@ -156,25 +156,7 @@ fn test_reader() -> Result<(), AppError> {
     let pn532: Pn532<_, _, 64> = Pn532::new(interface, timer);
     let mut nfc = NfcTag::new(pn532);
 
-    FreeRtos::delay_ms(200);
-
-    let mut init_ok = false;
-    for attempt in 1..=5 {
-        match nfc.init() {
-            Ok(()) => {
-                init_ok = true;
-                break;
-            }
-            Err(err) => {
-                warn!("PN532 init attempt {attempt}/5 failed: {err}");
-                FreeRtos::delay_ms(200);
-            }
-        }
-    }
-
-    if !init_ok {
-        return Err(NfcError::InvalidResponse("PN532 did not initialize after retries").into());
-    }
+    nfc.init_default()?;
 
     let fw = nfc.firmware_version()?;
     info!("PN532 firmware raw: {:02X?}", fw);

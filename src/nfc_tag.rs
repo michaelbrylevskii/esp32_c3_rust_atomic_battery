@@ -1,6 +1,12 @@
+//! High-level обёртка над `pn532` для чтения и записи key-value данных на NFC Tag.
+//!
+//! Подробная документация на русском:
+//! [docs/nfc_tag.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/nfc_tag.md)
+
 use core::fmt::{self, Debug};
 use core::time::Duration;
 use std::string::String;
+use std::thread;
 use std::vec::Vec;
 
 use ndef::{Message, Payload, Record, RecordType};
@@ -13,6 +19,9 @@ const READ_BLOCK_BYTES: usize = 16;
 const READ_BLOCK_PAGES: u8 = 4;
 const COMMAND_TIMEOUT: Duration = Duration::from_millis(100);
 const INIT_TIMEOUT: Duration = Duration::from_millis(50);
+const DEFAULT_INIT_STARTUP_DELAY: Duration = Duration::from_millis(200);
+const DEFAULT_INIT_RETRY_DELAY: Duration = Duration::from_millis(200);
+const DEFAULT_INIT_ATTEMPTS: usize = 5;
 const TLV_NDEF_MESSAGE: u8 = 0x03;
 const TLV_NULL: u8 = 0x00;
 const TLV_TERMINATOR: u8 = 0xFE;
@@ -21,43 +30,61 @@ const TLV_MEMORY_CONTROL: u8 = 0x02;
 const TLV_PROPRIETARY: u8 = 0xFD;
 const KV_HEADER: &str = "KV1";
 
+/// Краткая информация о найденной NFC-метке.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TagInfo {
+    /// UID метки в том виде, как его вернул PN532.
     pub uid: Vec<u8>,
+    /// Answer To Request, Type A.
     pub atqa: [u8; 2],
+    /// Select Acknowledge.
     pub sak: u8,
 }
 
+/// Поддерживаемые типы значений для key-value хранилища.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KvValue {
+    /// ASCII-строка без переводов строки.
     Str(String),
+    /// Беззнаковое 8-битное число.
     U8(u8),
+    /// Знаковое 8-битное число.
     I8(i8),
+    /// Беззнаковое 4-битное число в диапазоне `0..=15`.
     U4(u8),
+    /// Знаковое 4-битное число в диапазоне `-8..=7`.
     I4(i8),
+    /// Булево значение.
     Bool(bool),
 }
 
+/// Одна запись key-value хранилища.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KvEntry {
+    /// ASCII-ключ.
     pub key: String,
+    /// Значение ключа.
     pub value: KvValue,
 }
 
+/// Набор key-value записей, который сериализуется в NDEF Text Record.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct KvStore {
     entries: Vec<KvEntry>,
 }
 
 impl KvStore {
+    /// Создаёт пустое key-value хранилище.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Возвращает все записи в порядке хранения.
     pub fn entries(&self) -> &[KvEntry] {
         &self.entries
     }
 
+    /// Возвращает значение по ключу, если оно есть.
     pub fn get(&self, key: &str) -> Option<&KvValue> {
         self.entries
             .iter()
@@ -65,6 +92,9 @@ impl KvStore {
             .map(|entry| &entry.value)
     }
 
+    /// Вставляет или обновляет запись.
+    ///
+    /// Проверяет ключ и значение на соответствие ограничениям формата.
     pub fn insert(
         &mut self,
         key: impl Into<String>,
@@ -83,6 +113,7 @@ impl KvStore {
         Ok(self)
     }
 
+    /// Удобный helper для строкового значения.
     pub fn insert_string(
         &mut self,
         key: impl Into<String>,
@@ -91,6 +122,7 @@ impl KvStore {
         self.insert(key, KvValue::Str(value.into()))
     }
 
+    /// Удобный helper для `u8`.
     pub fn insert_u8(
         &mut self,
         key: impl Into<String>,
@@ -99,6 +131,7 @@ impl KvStore {
         self.insert(key, KvValue::U8(value))
     }
 
+    /// Удобный helper для `i8`.
     pub fn insert_i8(
         &mut self,
         key: impl Into<String>,
@@ -107,6 +140,7 @@ impl KvStore {
         self.insert(key, KvValue::I8(value))
     }
 
+    /// Удобный helper для `u4`.
     pub fn insert_u4(
         &mut self,
         key: impl Into<String>,
@@ -115,6 +149,7 @@ impl KvStore {
         self.insert(key, KvValue::U4(value))
     }
 
+    /// Удобный helper для `i4`.
     pub fn insert_i4(
         &mut self,
         key: impl Into<String>,
@@ -123,6 +158,7 @@ impl KvStore {
         self.insert(key, KvValue::I4(value))
     }
 
+    /// Удобный helper для `bool`.
     pub fn insert_bool(
         &mut self,
         key: impl Into<String>,
@@ -131,6 +167,9 @@ impl KvStore {
         self.insert(key, KvValue::Bool(value))
     }
 
+    /// Сериализует хранилище в внутренний текстовый формат `KV1`.
+    ///
+    /// Этот текст потом кладётся в NDEF Text Record.
     pub fn to_text(&self) -> Result<String, KvFormatError> {
         let mut text = String::from(KV_HEADER);
 
@@ -148,6 +187,7 @@ impl KvStore {
         Ok(text)
     }
 
+    /// Парсит внутренний текстовый формат `KV1` обратно в `KvStore`.
     pub fn from_text(text: &str) -> Result<Self, KvFormatError> {
         let mut lines = text.lines();
         let Some(header) = lines.next() else {
@@ -175,6 +215,27 @@ impl KvStore {
         }
 
         Ok(store)
+    }
+}
+
+/// Конфигурация высокоуровневой инициализации PN532.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NfcInitConfig {
+    /// Пауза перед первой попыткой инициализации.
+    pub startup_delay: Duration,
+    /// Пауза между повторными попытками.
+    pub retry_delay: Duration,
+    /// Общее число попыток инициализации.
+    pub attempts: usize,
+}
+
+impl Default for NfcInitConfig {
+    fn default() -> Self {
+        Self {
+            startup_delay: DEFAULT_INIT_STARTUP_DELAY,
+            retry_delay: DEFAULT_INIT_RETRY_DELAY,
+            attempts: DEFAULT_INIT_ATTEMPTS,
+        }
     }
 }
 
@@ -249,6 +310,7 @@ impl KvValue {
     }
 }
 
+/// Ошибки формата key-value и NDEF Text payload.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KvFormatError {
     MissingHeader,
@@ -273,11 +335,13 @@ impl fmt::Display for KvFormatError {
 
 impl std::error::Error for KvFormatError {}
 
+/// Ошибки high-level NFC слоя.
 #[derive(Debug)]
 pub enum NfcError<E: Debug> {
     Pn532(pn532::Error<E>),
     Format(KvFormatError),
     InvalidResponse(&'static str),
+    InvalidInitConfig(&'static str),
     TagStatus(u8),
     InvalidCapabilityContainer([u8; 4]),
     NoNdefMessage,
@@ -307,6 +371,9 @@ where
             NfcError::Pn532(err) => write!(f, "pn532 error: {err:?}"),
             NfcError::Format(err) => write!(f, "format error: {err}"),
             NfcError::InvalidResponse(reason) => write!(f, "invalid pn532 response: {reason}"),
+            NfcError::InvalidInitConfig(reason) => {
+                write!(f, "invalid NFC init config: {reason}")
+            }
             NfcError::TagStatus(status) => write!(f, "ntag returned status 0x{status:02X}"),
             NfcError::InvalidCapabilityContainer(cc) => {
                 write!(f, "invalid capability container: {cc:02X?}")
@@ -327,6 +394,7 @@ where
 
 impl<E> std::error::Error for NfcError<E> where E: Debug + fmt::Display {}
 
+/// High-level обёртка над `Pn532` для работы с key-value данными на NFC-метке.
 pub struct NfcTag<I, T, const N: usize>
 where
     I: Interface,
@@ -340,10 +408,14 @@ where
     I: Interface,
     T: CountDown<Time = Duration>,
 {
+    /// Создаёт high-level NFC wrapper поверх уже созданного `Pn532`.
     pub fn new(pn532: Pn532<I, T, N>) -> Self {
         Self { pn532 }
     }
 
+    /// Выполняет одну низкоуровневую попытку инициализации PN532 через `SAMConfiguration`.
+    ///
+    /// Этот метод не делает retry и не добавляет стартовую задержку.
     pub fn init(&mut self) -> Result<(), NfcError<I::Error>> {
         self.pn532.process(
             &Request::sam_configuration(SAMMode::Normal, false),
@@ -353,6 +425,41 @@ where
         Ok(())
     }
 
+    /// Инициализирует PN532 с параметрами по умолчанию.
+    ///
+    /// Под капотом добавляет стартовую паузу и несколько попыток `init()`.
+    pub fn init_default(&mut self) -> Result<(), NfcError<I::Error>> {
+        self.init_with_config(NfcInitConfig::default())
+    }
+
+    /// Инициализирует PN532 с заданной конфигурацией задержек и retry.
+    pub fn init_with_config(&mut self, config: NfcInitConfig) -> Result<(), NfcError<I::Error>> {
+        if config.attempts == 0 {
+            return Err(NfcError::InvalidInitConfig(
+                "attempts must be greater than zero",
+            ));
+        }
+
+        thread::sleep(config.startup_delay);
+
+        let mut last_error = None;
+        for attempt in 0..config.attempts {
+            match self.init() {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    last_error = Some(err);
+
+                    if attempt + 1 < config.attempts {
+                        thread::sleep(config.retry_delay);
+                    }
+                }
+            }
+        }
+
+        Err(last_error.expect("attempts > 0 ensures at least one init attempt"))
+    }
+
+    /// Читает версию firmware PN532.
     pub fn firmware_version(&mut self) -> Result<[u8; 4], NfcError<I::Error>> {
         let response = self
             .pn532
@@ -367,6 +474,9 @@ where
         Ok(response[..4].try_into().expect("slice length checked"))
     }
 
+    /// Опрашивает поле и возвращает найденную Type A метку.
+    ///
+    /// Возвращает `Ok(None)`, если метки в поле нет.
     pub fn poll_tag(&mut self, timeout: Duration) -> Result<Option<TagInfo>, NfcError<I::Error>> {
         match self
             .pn532
@@ -378,11 +488,17 @@ where
         }
     }
 
+    /// Читает key-value данные с метки.
+    ///
+    /// Метод ожидает, что на метке лежит NDEF Text Record в формате `KV1`.
     pub fn read_kv_store(&mut self) -> Result<KvStore, NfcError<I::Error>> {
         let text = self.read_text_payload()?;
         Ok(KvStore::from_text(&text)?)
     }
 
+    /// Записывает key-value данные на метку.
+    ///
+    /// Текущая реализация переписывает всю пользовательскую NDEF-область целиком.
     pub fn write_kv_store(&mut self, store: &KvStore) -> Result<(), NfcError<I::Error>> {
         let text = store.to_text()?;
         self.write_text_payload(&text)
