@@ -1,4 +1,7 @@
 use esp32_c3_rust_atomic_battery::nfc_tag::{self, KvFormatError, KvStore, NfcError};
+use esp32_c3_rust_atomic_battery::segment_display::{
+    Align, DisplayError, IntFormat, SegmentDisplay4,
+};
 use esp_idf_svc::hal::delay::Delay;
 use esp_idf_svc::hal::gpio::Pull;
 use esp_idf_svc::hal::{
@@ -9,8 +12,6 @@ use esp_idf_svc::hal::{
 };
 use esp_idf_svc::sys::EspError;
 use std::fmt;
-
-use tm1637_embedded_hal::{formatters, Brightness, TM1637Builder};
 
 use std::time::Duration;
 
@@ -23,6 +24,7 @@ enum AppError {
     Esp(EspError),
     Kv(KvFormatError),
     Nfc(NfcError<I2cError>),
+    Display(DisplayError),
 }
 
 impl From<EspError> for AppError {
@@ -43,12 +45,19 @@ impl From<NfcError<I2cError>> for AppError {
     }
 }
 
+impl From<DisplayError> for AppError {
+    fn from(value: DisplayError) -> Self {
+        Self::Display(value)
+    }
+}
+
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AppError::Esp(err) => write!(f, "esp error: {err}"),
             AppError::Kv(err) => write!(f, "kv format error: {err}"),
             AppError::Nfc(err) => write!(f, "nfc error: {err}"),
+            AppError::Display(err) => write!(f, "display error: {err}"),
         }
     }
 }
@@ -70,7 +79,7 @@ fn main() {
 }
 
 fn run() -> Result<(), AppError> {
-    test_reader()
+    test_display()
 }
 
 fn main_loop() -> Result<(), EspError> {
@@ -103,36 +112,42 @@ fn main_loop() -> Result<(), EspError> {
     }
 }
 
-fn test_display() -> Result<(), EspError> {
-    let peripherals = Peripherals::take().unwrap();
+fn test_display() -> Result<(), AppError> {
+    let peripherals = Peripherals::take()?;
 
-    let clk = PinDriver::output(peripherals.pins.gpio5).unwrap();
-    let dio = PinDriver::output(peripherals.pins.gpio6).unwrap();
-    let delay: Delay = Default::default();
-
-    let mut display = TM1637Builder::new(clk, dio, delay)
-        .brightness(Brightness::L3)
-        .delay_us(100)
-        .build_blocking::<4>();
-
-    // Инициализация: очистка экрана и установка яркости
-    display.init().unwrap();
-
-    let mut counter = 0;
+    let mut display = SegmentDisplay4::new(
+        peripherals.pins.gpio5, // CLK
+        peripherals.pins.gpio6, // DIO
+    )?;
+    display.init()?;
 
     loop {
-        // Показать число 123, выровненное вправо: " 123"
-        // let digits = numbers::r_u16_4(counter);
-        // let digits = numbers::u16_4(counter);
-        counter += 1;
-        // display.display_slice(0, &digits).unwrap();
-        // std::thread::sleep(std::time::Duration::from_secs(1));
+        display.show_int(42, IntFormat::new().right())?;
+        FreeRtos::delay_ms(1000);
 
-        let blink = counter % 2 == 0;
-        let segments =
-            formatters::clock_to_4digits((counter / 100) as u8, (counter % 100) as u8, blink);
-        display.display_slice(0, &segments).ok();
-        delay.delay_ms(500);
+        display.show_int(42, IntFormat::new().right().leading_zeros(true))?;
+        FreeRtos::delay_ms(1000);
+
+        display.show_int(42, IntFormat::new().left())?;
+        FreeRtos::delay_ms(1000);
+
+        display.set_colon(true)?;
+        display.show_mmss(12, 34)?;
+
+        for _ in 0..6 {
+            FreeRtos::delay_ms(500);
+            display.toggle_colon()?;
+        }
+
+        display.set_colon(false)?;
+        display.show_error()?;
+        FreeRtos::delay_ms(1200);
+
+        display.show_text("AbCd", Align::Left)?;
+        FreeRtos::delay_ms(1200);
+
+        display.scroll_error_once(Duration::from_millis(250))?;
+        FreeRtos::delay_ms(500);
     }
 }
 
