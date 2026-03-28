@@ -1,16 +1,18 @@
-use esp32_c3_rust_atomic_battery::nfc_tag::{self, KvFormatError, KvStore, NfcError};
+use esp32_c3_rust_atomic_battery::nfc_tag::{
+    self, esp_idf::StdTimer, KvFormatError, KvStore, NfcError, NfcTag,
+};
 use esp32_c3_rust_atomic_battery::segment_display::{
     Align, DisplayError, IntFormat, SegmentDisplay4,
 };
-use esp_idf_svc::hal::delay::Delay;
 use esp_idf_svc::hal::gpio::Pull;
 use esp_idf_svc::hal::{
     delay::FreeRtos,
     gpio::{Level, PinDriver},
-    i2c::I2cError,
+    i2c::{I2c, I2cConfig, I2cDriver, I2cError},
     peripherals::Peripherals,
 };
-use esp_idf_svc::sys::EspError;
+use esp_idf_svc::sys::{false_, EspError};
+use pn532::i2c::I2CInterface;
 use std::fmt;
 
 use std::time::Duration;
@@ -78,37 +80,109 @@ fn main() {
     }
 }
 
+const BAT_SERVICE_KEY: &str = "service";
+const BAT_HEALTH_KEY: &str = "health";
+const BAT_CHARGE_KEY: &str = "charge";
+const BAT_CONSUMPTION_KEY: &str = "consumption";
+
 fn run() -> Result<(), AppError> {
-    test_display()
-}
+    // test_display()
+    let p = Peripherals::take()?;
 
-fn main_loop() -> Result<(), EspError> {
-    let peripherals = Peripherals::take()?;
+    let mut board_led_pin = PinDriver::output(p.pins.gpio8)?;
+    board_led_pin.set_level(Level::Low)?;
 
-    let mut led_pin = PinDriver::output(peripherals.pins.gpio8)?;
-    led_pin.set_level(Level::High)?;
+    let mut red_led_pin = PinDriver::output(p.pins.gpio0)?;
+    red_led_pin.set_level(Level::High)?;
 
-    let btn_pin = PinDriver::input(peripherals.pins.gpio9, Pull::Floating)?;
+    let mut green_led_pin = PinDriver::output(p.pins.gpio1)?;
+    green_led_pin.set_level(Level::Low)?;
 
-    let delay: Delay = Default::default();
+    let switch_pin = PinDriver::input(p.pins.gpio10, Pull::Up)?;
 
-    let mut btn_is_down = false;
-    let mut btn_is_down_up = false;
+    let mut switch_enabled = false;
+    let mut battery_plugged = false;
+    let mut battery_healthy = false;
+    let mut battery_has_charge = false;
+
+    let mut nfc = nfc_tag::esp_idf::new_default(
+        p.i2c0,
+        p.pins.gpio3, // SDA
+        p.pins.gpio4, // SCL
+    )?;
+    nfc.init_default()?;
+
+    let mut display = SegmentDisplay4::new(
+        p.pins.gpio5, // CLK
+        p.pins.gpio6, // DIO
+    )?;
+    display.init()?;
 
     loop {
-        if btn_pin.is_low() {
-            btn_is_down = true;
+        log::info!("Loop begin");
+
+        match read_nfc(&mut nfc) {
+            Some(battery_data) => {
+                // Разобрать и разложить по переменным
+                battery_plugged = true;
+            }
+            None => {
+                battery_plugged = false;
+            }
+        }
+
+        switch_enabled = switch_pin.is_low();
+
+        if !battery_plugged {
+            red_led_pin.set_high();
+            if switch_enabled {
+                display.scroll_error_once(Duration::from_millis(250))?;
+                // FreeRtos::delay_ms(500);
+            } 
         } else {
-            btn_is_down_up = btn_is_down;
-            btn_is_down = false;
+            red_led_pin.set_low();
         }
 
-        if btn_is_down_up {
-            led_pin.toggle()?;
-        }
+        FreeRtos::delay_ms(100);
 
-        delay.delay_ms(10);
-        //FreeRtos::delay_ms(300);
+        // FreeRtos::delay_ms(500);
+        // board_led_pin.set_level(Level::Low)?;
+        // FreeRtos::delay_ms(500);
+        // green_led_pin.set_level(Level::Low)?;
+        // FreeRtos::delay_ms(500);
+        // red_led_pin.set_level(Level::Low)?;
+        // FreeRtos::delay_ms(500);
+        // log::info!("loop 2");
+        // while switch_pin.is_high() {
+        //     FreeRtos::delay_ms(100);
+        //     log::info!("loop 3");
+        // }
+        // board_led_pin.set_level(Level::High)?;
+        // green_led_pin.set_level(Level::High)?;
+        // red_led_pin.set_level(Level::High)?;
+        // FreeRtos::delay_ms(1000);
+        // log::info!("loop 4");
+    }
+}
+
+fn read_nfc(nfc: &mut NfcTag<I2CInterface<I2cDriver<'_>>, StdTimer, 64>) -> Option<KvStore> {
+    match nfc.poll_tag(Duration::from_millis(1000)) {
+        Ok(Some(tag)) => {
+            info!(
+                "Tag UID: {:02X?}, ATQA={:02X?}, SAK=0x{:02X}",
+                tag.uid, tag.atqa, tag.sak
+            );
+
+            match nfc.read_kv_store() {
+                Ok(store) => {
+                    info!("Tag key-value data: {:?}", store.entries());
+                    return Option::Some(store);
+                }
+                Err(_) => return Option::None,
+            }
+        }
+        Ok(None) => return Option::None,
+        Err(e) => return Option::None,
     }
 }
 
