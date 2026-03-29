@@ -403,33 +403,28 @@ if let Some(tag) = nfc.poll_tag(Duration::from_millis(1000))? {
 }
 ```
 
-## Что делает `test_reader()` в проекте
+## Какие demo есть в проекте
 
-Текущая демонстрация использования находится в [src/bin/nfc_demo.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/bin/nfc_demo.rs#L1).
+Для NFC сейчас есть два отдельных demo-bin:
 
-Сейчас там:
+- [src/bin/battery_tag_demo/main.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/bin/battery_tag_demo/main.rs)
+- [src/bin/service_tag_demo/main.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/bin/service_tag_demo/main.rs)
 
-- создаётся `NfcTag` через `nfc_tag::esp_idf::new_default(...)`
-- вызывается `init_default()`
-- печатается firmware version
-- собирается demo `KvStore`
-- в цикле опрашивается метка
-- при обнаружении печатается содержимое key-value
-- при `WRITE_DEMO = true` делается запись и read-back проверка
+Оба demo работают одинаково по схеме:
 
-Безопасный режим для повседневной работы:
+- создают `NfcTag` через `nfc_tag::esp_idf::new_default(...)`
+- вызывают `init_default()`
+- печатают firmware version PN532
+- ждут NFC-метку
+- при первом обнаружении конкретной метки записывают базовую структуру нужного типа
+- сразу после записи делают read-back и валидируют, что считанная структура совпала с ожидаемой
 
-```rust
-const WRITE_DEMO: bool = false;
+Запуск:
+
+```bash
+cargo espflash flash --bin battery_tag_demo --monitor
+cargo espflash flash --bin service_tag_demo --monitor
 ```
-
-Если нужно один раз переписать метку тестовыми данными:
-
-```rust
-const WRITE_DEMO: bool = true;
-```
-
-После проверки лучше вернуть обратно `false`, чтобы код не перезаписывал каждую поднесённую метку.
 
 ## Какие ошибки можно ожидать
 

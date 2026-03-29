@@ -1,5 +1,6 @@
 use common::drivers::nfc_tag::{KvFormatError, NfcError};
 use common::drivers::segment_display::{AsyncDisplayError, DisplayError};
+use common::utils::atomic_tags::AtomicTagError;
 use esp_idf_svc::hal::i2c::I2cError;
 use esp_idf_svc::sys::EspError;
 use std::fmt;
@@ -11,6 +12,7 @@ pub enum AppError {
     Nfc(NfcError<I2cError>),
     Display(DisplayError),
     AsyncDisplay(AsyncDisplayError),
+    Tag(AtomicTagError),
 }
 
 impl From<EspError> for AppError {
@@ -22,6 +24,12 @@ impl From<EspError> for AppError {
 impl From<KvFormatError> for AppError {
     fn from(value: KvFormatError) -> Self {
         Self::Kv(value)
+    }
+}
+
+impl From<AtomicTagError> for AppError {
+    fn from(value: AtomicTagError) -> Self {
+        Self::Tag(value)
     }
 }
 
@@ -51,6 +59,7 @@ impl fmt::Display for AppError {
             AppError::Nfc(err) => write!(f, "nfc error: {err}"),
             AppError::Display(err) => write!(f, "display error: {err}"),
             AppError::AsyncDisplay(err) => write!(f, "async display error: {err}"),
+            AppError::Tag(err) => write!(f, "tag error: {err}"),
         }
     }
 }

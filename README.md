@@ -13,6 +13,19 @@
 - ридер на стороне потребителя находит NFC-метку батареи
 - тумблер включает или выключает само устройство
 - если батарея обнаружена и устройство активировано, прошивка начинает расходовать её заряд
+- помимо батареи есть сервисная NFC-метка для настройки скорости потребления
+
+На текущем этапе поддерживаются два прикладных формата меток:
+
+- `battery`:
+  - `capacity`
+  - `charge`
+  - `healthy`
+  - `dirty`
+  - `session_id`
+- `service`:
+  - `service_type = "consumption_config"`
+  - `consumption_per_sec`
 
 Точная игровая логика ещё в проработке, поэтому в коде и документации она пока описана только на общем уровне.
 
@@ -93,7 +106,8 @@ cargo build --bin app
 Сборка конкретного demo-таргета:
 
 ```bash
-cargo build --bin nfc_demo
+cargo build --bin battery_tag_demo
+cargo build --bin service_tag_demo
 cargo build --bin display_demo
 ```
 
@@ -111,10 +125,16 @@ cargo fmt
 cargo espflash flash --bin app --monitor
 ```
 
-NFC demo:
+Battery tag demo:
 
 ```bash
-cargo espflash flash --bin nfc_demo --monitor
+cargo espflash flash --bin battery_tag_demo --monitor
+```
+
+Service tag demo:
+
+```bash
+cargo espflash flash --bin service_tag_demo --monitor
 ```
 
 Display demo:
@@ -143,8 +163,13 @@ src/
       main.rs
       errors.rs
       atomic_machine.rs
+      hardware.rs
+      storage.rs
 
-    nfc_demo/
+    battery_tag_demo/
+      main.rs
+
+    service_tag_demo/
       main.rs
 
     display_demo/
@@ -155,10 +180,13 @@ src/
 
 - `src/common` — общий код
 - `src/common/drivers` — hardware-обёртки и кастомные драйвера
-- `src/common/utils` — общие утилиты
+- `src/common/utils` — общие утилиты и прикладные модели NFC-тегов
 - `src/bin/app` — основной бинарник приложения
 - `src/bin/app/atomic_machine.rs` — текущий runtime и логика "атомной машины"
-- `src/bin/nfc_demo` — изолированный demo-таргет для PN532/NFC
+- `src/bin/app/hardware.rs` — wiring и инициализация железа
+- `src/bin/app/storage.rs` — энергонезависимые настройки и состояние через NVS
+- `src/bin/battery_tag_demo` — запись и проверка базовой структуры battery-tag
+- `src/bin/service_tag_demo` — запись и проверка базовой структуры service-tag
 - `src/bin/display_demo` — изолированный demo-таргет для TM1637
 
 ## Полезные файлы

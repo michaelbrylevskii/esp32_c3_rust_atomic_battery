@@ -8,7 +8,7 @@ use esp_idf_svc::hal::{
 };
 
 pub struct AtomicMachineHardware<'d> {
-    pub board_led: PinDriver<'d, Output>,
+    _board_led: PinDriver<'d, Output>,
     pub red_led: PinDriver<'d, Output>,
     pub green_led: PinDriver<'d, Output>,
     pub switch: PinDriver<'d, Input>,
@@ -50,7 +50,7 @@ impl AtomicMachineHardware<'static> {
         display.clear()?;
 
         Ok(Self {
-            board_led,
+            _board_led: board_led,
             red_led,
             green_led,
             switch,

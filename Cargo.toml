@@ -21,8 +21,13 @@ path = "src/bin/display_demo/main.rs"
 harness = false
 
 [[bin]]
-name = "nfc_demo"
-path = "src/bin/nfc_demo/main.rs"
+name = "battery_tag_demo"
+path = "src/bin/battery_tag_demo/main.rs"
+harness = false
+
+[[bin]]
+name = "service_tag_demo"
+path = "src/bin/service_tag_demo/main.rs"
 harness = false
 
 [profile.release]
