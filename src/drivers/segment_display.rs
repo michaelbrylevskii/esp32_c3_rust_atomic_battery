@@ -589,10 +589,7 @@ impl AsyncSegmentDisplay4 {
         })
     }
 
-    fn with_state(
-        &self,
-        update: impl FnOnce(&mut BufferedState),
-    ) -> Result<(), AsyncDisplayError> {
+    fn with_state(&self, update: impl FnOnce(&mut BufferedState)) -> Result<(), AsyncDisplayError> {
         self.ensure_worker_alive()?;
 
         let mut state = self
@@ -751,10 +748,7 @@ fn run_display_worker(
         }
 
         let mut frame = frame_from_content(&snapshot.content, content_started, now);
-        apply_colon(
-            &mut frame,
-            colon_is_on(snapshot.colon, colon_started, now),
-        );
+        apply_colon(&mut frame, colon_is_on(snapshot.colon, colon_started, now));
 
         if frame != last_rendered_frame {
             if let Err(err) = display.display.display_slice(0, &frame) {

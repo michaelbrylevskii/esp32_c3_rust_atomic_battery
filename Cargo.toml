@@ -10,6 +10,14 @@ rust-version = "1.82"
 name = "esp32_c3_rust_atomic_battery"
 harness = false # do not use the built-in cargo test harness -> resolve rust-analyzer errors
 
+[[bin]]
+name = "display_demo"
+harness = false
+
+[[bin]]
+name = "nfc_demo"
+harness = false
+
 [profile.release]
 opt-level = "s"
 
