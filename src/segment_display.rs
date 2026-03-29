@@ -1,4 +1,7 @@
 //! Удобная обёртка над TM1637 для 4-разрядного индикатора с двоеточием посередине.
+//!
+//! Подробная документация на русском:
+//! [docs/segment_display.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/segment_display.md)
 
 use core::fmt;
 use core::time::Duration;
