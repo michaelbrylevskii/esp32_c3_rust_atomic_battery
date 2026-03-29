@@ -7,8 +7,8 @@ fn main() {
 
     log::info!("Starting app binary");
 
-    if let Err(e) = app::run() {
-        log::error!("Fatal error: {e:?}");
+    if let Err(err) = app::run() {
+        log::error!("Fatal error: {err:?}");
         loop {
             FreeRtos::delay_ms(1000);
         }
