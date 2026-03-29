@@ -1,18 +1,15 @@
-use esp32_c3_rust_atomic_battery::nfc_tag::{
-    self, esp_idf::StdTimer, KvFormatError, KvStore, NfcError, NfcTag,
-};
+use esp32_c3_rust_atomic_battery::nfc_tag::{self, KvFormatError, KvStore, NfcError};
 use esp32_c3_rust_atomic_battery::segment_display::{
-    Align, DisplayError, IntFormat, SegmentDisplay4,
+    Align, AsyncDisplayError, AsyncSegmentDisplay4, DisplayError, IntFormat,
 };
 use esp_idf_svc::hal::gpio::Pull;
 use esp_idf_svc::hal::{
     delay::FreeRtos,
     gpio::{Level, PinDriver},
-    i2c::{I2c, I2cConfig, I2cDriver, I2cError},
+    i2c::I2cError,
     peripherals::Peripherals,
 };
-use esp_idf_svc::sys::{false_, EspError};
-use pn532::i2c::I2CInterface;
+use esp_idf_svc::sys::EspError;
 use std::fmt;
 
 use std::time::Duration;
@@ -27,6 +24,7 @@ enum AppError {
     Kv(KvFormatError),
     Nfc(NfcError<I2cError>),
     Display(DisplayError),
+    AsyncDisplay(AsyncDisplayError),
 }
 
 impl From<EspError> for AppError {
@@ -53,6 +51,12 @@ impl From<DisplayError> for AppError {
     }
 }
 
+impl From<AsyncDisplayError> for AppError {
+    fn from(value: AsyncDisplayError) -> Self {
+        Self::AsyncDisplay(value)
+    }
+}
+
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -60,6 +64,7 @@ impl fmt::Display for AppError {
             AppError::Kv(err) => write!(f, "kv format error: {err}"),
             AppError::Nfc(err) => write!(f, "nfc error: {err}"),
             AppError::Display(err) => write!(f, "display error: {err}"),
+            AppError::AsyncDisplay(err) => write!(f, "async display error: {err}"),
         }
     }
 }
@@ -100,11 +105,6 @@ fn run() -> Result<(), AppError> {
 
     let switch_pin = PinDriver::input(p.pins.gpio10, Pull::Up)?;
 
-    let mut switch_enabled = false;
-    let mut battery_plugged = false;
-    let mut battery_healthy = false;
-    let mut battery_has_charge = false;
-
     let mut nfc = nfc_tag::esp_idf::new_default(
         p.i2c0,
         p.pins.gpio3, // SDA
@@ -112,38 +112,52 @@ fn run() -> Result<(), AppError> {
     )?;
     nfc.init_default()?;
 
-    let mut display = SegmentDisplay4::new(
+    let display = AsyncSegmentDisplay4::new(
         p.pins.gpio5, // CLK
         p.pins.gpio6, // DIO
     )?;
-    display.init()?;
+
+    display.clear()?;
+
+    let mut switch_enabled = false;
+    let mut switch_changed = false;
+    let mut battery_plugged = false;
+    let mut battery_healthy = false;
+    let mut battery_has_charge = false;
 
     loop {
         log::info!("Loop begin");
 
-        match read_nfc(&mut nfc) {
-            Some(battery_data) => {
-                // Разобрать и разложить по переменным
-                battery_plugged = true;
+        let battery_plugged = match read_nfc(&mut nfc) {
+            Some(_battery_data) => {
+                // Разобрать и разложить по переменным.
+                true
             }
-            None => {
-                battery_plugged = false;
-            }
-        }
+            None => false,
+        };
 
-        switch_enabled = switch_pin.is_low();
+        let switch_enabled_local = switch_pin.is_low();
+        if switch_enabled_local != switch_enabled {
+            switch_enabled = switch_enabled_local;
+            switch_changed = true;
+        } else {
+            switch_changed = false;
+        }
 
         if !battery_plugged {
             red_led_pin.set_high();
-            if switch_enabled {
-                display.scroll_error_once(Duration::from_millis(250))?;
-                // FreeRtos::delay_ms(500);
-            } 
+            if switch_changed && switch_enabled {
+                display.start_scroll_text("no bat", Duration::from_millis(250))?;
+            }
+            if switch_changed && !switch_enabled {
+                display.clear()?;
+            }
         } else {
             red_led_pin.set_low();
+            display.show_mmss(15, 47)?;
         }
 
-        FreeRtos::delay_ms(100);
+        FreeRtos::delay_ms(10);
 
         // FreeRtos::delay_ms(500);
         // board_led_pin.set_level(Level::Low)?;
@@ -165,7 +179,7 @@ fn run() -> Result<(), AppError> {
     }
 }
 
-fn read_nfc(nfc: &mut NfcTag<I2CInterface<I2cDriver<'_>>, StdTimer, 64>) -> Option<KvStore> {
+fn read_nfc(nfc: &mut nfc_tag::esp_idf::EspNfcTag<'_>) -> Option<KvStore> {
     match nfc.poll_tag(Duration::from_millis(1000)) {
         Ok(Some(tag)) => {
             info!(
@@ -182,18 +196,17 @@ fn read_nfc(nfc: &mut NfcTag<I2CInterface<I2cDriver<'_>>, StdTimer, 64>) -> Opti
             }
         }
         Ok(None) => return Option::None,
-        Err(e) => return Option::None,
+        Err(_) => return Option::None,
     }
 }
 
 fn test_display() -> Result<(), AppError> {
     let peripherals = Peripherals::take()?;
 
-    let mut display = SegmentDisplay4::new(
+    let display = AsyncSegmentDisplay4::new(
         peripherals.pins.gpio5, // CLK
         peripherals.pins.gpio6, // DIO
     )?;
-    display.init()?;
 
     loop {
         display.show_int(42, IntFormat::new().right())?;
@@ -207,20 +220,18 @@ fn test_display() -> Result<(), AppError> {
 
         display.set_colon(true)?;
         display.show_mmss(12, 34)?;
-
-        for _ in 0..6 {
-            FreeRtos::delay_ms(500);
-            display.toggle_colon()?;
-        }
-
-        display.set_colon(false)?;
+        display.start_colon_blink(true, Duration::from_millis(500))?;
+        FreeRtos::delay_ms(3000);
+        display.stop_colon_blink(false)?;
         display.show_error()?;
         FreeRtos::delay_ms(1200);
 
         display.show_text("AbCd", Align::Left)?;
         FreeRtos::delay_ms(1200);
 
-        display.scroll_error_once(Duration::from_millis(250))?;
+        display.start_scroll_error(Duration::from_millis(250))?;
+        FreeRtos::delay_ms(3000);
+        display.clear()?;
         FreeRtos::delay_ms(500);
     }
 }

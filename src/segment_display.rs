@@ -5,7 +5,11 @@ use core::time::Duration;
 use esp_idf_svc::hal::delay::Delay;
 use esp_idf_svc::hal::gpio::{GpioError, Output, OutputPin, PinDriver};
 use esp_idf_svc::sys::EspError;
+use std::io;
 use std::string::String;
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::Instant;
 use tm1637_embedded_hal::formatters;
 use tm1637_embedded_hal::mappings::from_ascii_byte;
 use tm1637_embedded_hal::tokens::Blocking;
@@ -14,6 +18,7 @@ use tm1637_embedded_hal::{Brightness, Error as TmError, TM1637Builder, TM1637};
 const COLON_MASK: u8 = 0b1000_0000;
 const DISPLAY_WIDTH: usize = 4;
 const ERROR_TEXT: &str = "Error";
+const DEFAULT_WORKER_STACK_SIZE: usize = 4096;
 
 /// Выравнивание статического текста или числа на дисплее.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,6 +141,73 @@ impl fmt::Display for DisplayError {
 }
 
 impl std::error::Error for DisplayError {}
+
+/// Настройки фоновой задачи дисплея.
+///
+/// `worker_tick` определяет, как часто фоновая задача пересчитывает бегущую строку
+/// и мигание двоеточия. Это не шаг анимации, а внутренний период обслуживания.
+#[derive(Clone, Copy, Debug)]
+pub struct AsyncDisplayConfig {
+    /// Период обслуживания фоновой задачи.
+    pub worker_tick: Duration,
+    /// Размер стека для фоновой задачи.
+    pub thread_stack_size: usize,
+}
+
+impl Default for AsyncDisplayConfig {
+    fn default() -> Self {
+        Self {
+            worker_tick: Duration::from_millis(20),
+            thread_stack_size: DEFAULT_WORKER_STACK_SIZE,
+        }
+    }
+}
+
+/// Ошибки неблокирующей обёртки дисплея.
+#[derive(Debug)]
+pub enum AsyncDisplayError {
+    /// Ошибка low-level слоя дисплея.
+    Display(DisplayError),
+    /// Не удалось запустить фоновую задачу.
+    ThreadSpawn(io::Error),
+    /// Фоновая задача уже остановлена.
+    WorkerStopped,
+    /// Фоновая задача завершилась с ошибкой.
+    WorkerFailed(String),
+    /// `worker_tick` должен быть больше нуля.
+    InvalidWorkerTick,
+    /// Интервал анимации должен быть больше нуля.
+    InvalidAnimationDelay,
+}
+
+impl From<DisplayError> for AsyncDisplayError {
+    fn from(value: DisplayError) -> Self {
+        Self::Display(value)
+    }
+}
+
+impl fmt::Display for AsyncDisplayError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AsyncDisplayError::Display(err) => write!(f, "display error: {err}"),
+            AsyncDisplayError::ThreadSpawn(err) => {
+                write!(f, "failed to spawn display worker thread: {err}")
+            }
+            AsyncDisplayError::WorkerStopped => write!(f, "display worker thread has stopped"),
+            AsyncDisplayError::WorkerFailed(err) => {
+                write!(f, "display worker thread failed: {err}")
+            }
+            AsyncDisplayError::InvalidWorkerTick => {
+                write!(f, "display worker tick must be greater than zero")
+            }
+            AsyncDisplayError::InvalidAnimationDelay => {
+                write!(f, "animation delay must be greater than zero")
+            }
+        }
+    }
+}
+
+impl std::error::Error for AsyncDisplayError {}
 
 /// Обёртка над 4-разрядным TM1637-дисплеем с физическим двоеточием между 2 и 3 разрядом.
 ///
@@ -281,6 +353,284 @@ impl<'d> SegmentDisplay4<'d> {
     }
 }
 
+#[derive(Clone)]
+enum BufferedContent {
+    Static([u8; DISPLAY_WIDTH]),
+    Scroll {
+        source: Vec<u8>,
+        step_delay: Duration,
+    },
+}
+
+#[derive(Clone, Copy)]
+enum BufferedColonMode {
+    Static(bool),
+    Blink {
+        initial_on: bool,
+        interval: Duration,
+    },
+}
+
+#[derive(Clone)]
+struct BufferedState {
+    content: BufferedContent,
+    content_generation: u64,
+    colon: BufferedColonMode,
+    colon_generation: u64,
+    brightness: Brightness,
+    brightness_generation: u64,
+    shutdown: bool,
+}
+
+impl BufferedState {
+    fn new(brightness: Brightness) -> Self {
+        Self {
+            content: BufferedContent::Static([0; DISPLAY_WIDTH]),
+            content_generation: 0,
+            colon: BufferedColonMode::Static(false),
+            colon_generation: 0,
+            brightness,
+            brightness_generation: 0,
+            shutdown: false,
+        }
+    }
+}
+
+/// Неблокирующая обёртка над `SegmentDisplay4`.
+///
+/// Все вызовы `show_*` и анимации только обновляют внутренний буфер состояния.
+/// Реальный вывод на TM1637 выполняется фоновой задачей, поэтому основной код
+/// может продолжать работать, пока дисплей крутит строку или мигает двоеточием.
+pub struct AsyncSegmentDisplay4 {
+    state: Arc<Mutex<BufferedState>>,
+    worker_error: Arc<Mutex<Option<String>>>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl AsyncSegmentDisplay4 {
+    /// Создаёт дисплей с настройками по умолчанию и сразу запускает фоновую задачу.
+    pub fn new(
+        clk: impl OutputPin + Send + 'static,
+        dio: impl OutputPin + Send + 'static,
+    ) -> Result<Self, AsyncDisplayError> {
+        Self::with_config(
+            clk,
+            dio,
+            DisplayConfig::default(),
+            AsyncDisplayConfig::default(),
+        )
+    }
+
+    /// Создаёт дисплей с отдельными настройками low-level драйвера и фоновой задачи.
+    pub fn with_config(
+        clk: impl OutputPin + Send + 'static,
+        dio: impl OutputPin + Send + 'static,
+        display_config: DisplayConfig,
+        async_config: AsyncDisplayConfig,
+    ) -> Result<Self, AsyncDisplayError> {
+        if async_config.worker_tick.is_zero() {
+            return Err(AsyncDisplayError::InvalidWorkerTick);
+        }
+
+        let mut display = SegmentDisplay4::with_config(clk, dio, display_config)?;
+        display.init()?;
+
+        let state = Arc::new(Mutex::new(BufferedState::new(display_config.brightness)));
+        let worker_error = Arc::new(Mutex::new(None));
+
+        let worker_state = Arc::clone(&state);
+        let worker_error_slot = Arc::clone(&worker_error);
+        let worker = thread::Builder::new()
+            .name("tm1637-worker".into())
+            .stack_size(async_config.thread_stack_size)
+            .spawn(move || {
+                run_display_worker(
+                    display,
+                    worker_state,
+                    worker_error_slot,
+                    async_config.worker_tick,
+                );
+            })
+            .map_err(AsyncDisplayError::ThreadSpawn)?;
+
+        Ok(Self {
+            state,
+            worker_error,
+            worker: Some(worker),
+        })
+    }
+
+    /// Очищает буфер дисплея.
+    pub fn clear(&self) -> Result<(), AsyncDisplayError> {
+        self.update_content(BufferedContent::Static([0; DISPLAY_WIDTH]))
+    }
+
+    /// Меняет яркость дисплея.
+    pub fn set_brightness(&self, brightness: Brightness) -> Result<(), AsyncDisplayError> {
+        self.with_state(|state| {
+            state.brightness = brightness;
+            state.brightness_generation = state.brightness_generation.wrapping_add(1);
+        })
+    }
+
+    /// Явно включает или выключает двоеточие.
+    ///
+    /// Вызов переводит двоеточие в статический режим и отключает мигание.
+    pub fn set_colon(&self, enabled: bool) -> Result<(), AsyncDisplayError> {
+        self.with_state(|state| {
+            state.colon = BufferedColonMode::Static(enabled);
+            state.colon_generation = state.colon_generation.wrapping_add(1);
+        })
+    }
+
+    /// Инвертирует двоеточие и переводит его в статический режим.
+    pub fn toggle_colon(&self) -> Result<(), AsyncDisplayError> {
+        self.with_state(|state| {
+            let enabled = match state.colon {
+                BufferedColonMode::Static(enabled) => enabled,
+                BufferedColonMode::Blink { initial_on, .. } => initial_on,
+            };
+            state.colon = BufferedColonMode::Static(!enabled);
+            state.colon_generation = state.colon_generation.wrapping_add(1);
+        })
+    }
+
+    /// Запускает независимое мигание двоеточия.
+    pub fn start_colon_blink(
+        &self,
+        initial_on: bool,
+        interval: Duration,
+    ) -> Result<(), AsyncDisplayError> {
+        if interval.is_zero() {
+            return Err(AsyncDisplayError::InvalidAnimationDelay);
+        }
+
+        self.with_state(|state| {
+            state.colon = BufferedColonMode::Blink {
+                initial_on,
+                interval,
+            };
+            state.colon_generation = state.colon_generation.wrapping_add(1);
+        })
+    }
+
+    /// Останавливает мигание двоеточия и фиксирует его в выбранном состоянии.
+    pub fn stop_colon_blink(&self, enabled: bool) -> Result<(), AsyncDisplayError> {
+        self.set_colon(enabled)
+    }
+
+    /// Показывает целое число в четырёх знакоместах.
+    pub fn show_int(&self, value: i16, format: IntFormat) -> Result<(), AsyncDisplayError> {
+        self.update_content(BufferedContent::Static(format_int(value, format)?))
+    }
+
+    /// Показывает время в виде `MM:SS`.
+    pub fn show_mmss(&self, minutes: u8, seconds: u8) -> Result<(), AsyncDisplayError> {
+        let frame = formatters::clock_to_4digits(minutes, seconds, false);
+        if minutes > 99 {
+            return Err(DisplayError::MinutesOutOfRange(minutes).into());
+        }
+        if seconds > 99 {
+            return Err(DisplayError::SecondsOutOfRange(seconds).into());
+        }
+
+        self.update_content(BufferedContent::Static(frame))
+    }
+
+    /// Показывает короткий ASCII-текст, обрезая его до четырёх символов.
+    pub fn show_text(&self, text: &str, align: Align) -> Result<(), AsyncDisplayError> {
+        self.update_content(BufferedContent::Static(format_text_frame(text, align)?))
+    }
+
+    /// Показывает максимально похожее на `ERROR` статическое сообщение.
+    pub fn show_error(&self) -> Result<(), AsyncDisplayError> {
+        self.show_text("Erro", Align::Left)
+    }
+
+    /// Включает непрерывную бегущую строку.
+    ///
+    /// Анимация крутится до тех пор, пока не будет вызван другой `show_*`
+    /// или `start_scroll_text(...)` с новым сообщением.
+    pub fn start_scroll_text(
+        &self,
+        text: &str,
+        step_delay: Duration,
+    ) -> Result<(), AsyncDisplayError> {
+        if step_delay.is_zero() {
+            return Err(AsyncDisplayError::InvalidAnimationDelay);
+        }
+
+        self.update_content(BufferedContent::Scroll {
+            source: build_scroll_source(text)?,
+            step_delay,
+        })
+    }
+
+    /// Включает непрерывную бегущую строку с сообщением `Error`.
+    pub fn start_scroll_error(&self, step_delay: Duration) -> Result<(), AsyncDisplayError> {
+        self.start_scroll_text(ERROR_TEXT, step_delay)
+    }
+
+    /// Возвращает последнюю фатальную ошибку фоновой задачи, если она была.
+    pub fn last_worker_error(&self) -> Option<String> {
+        self.worker_error
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
+    }
+
+    fn update_content(&self, content: BufferedContent) -> Result<(), AsyncDisplayError> {
+        self.with_state(|state| {
+            state.content = content;
+            state.content_generation = state.content_generation.wrapping_add(1);
+        })
+    }
+
+    fn with_state(
+        &self,
+        update: impl FnOnce(&mut BufferedState),
+    ) -> Result<(), AsyncDisplayError> {
+        self.ensure_worker_alive()?;
+
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| AsyncDisplayError::WorkerFailed("display state mutex poisoned".into()))?;
+
+        if state.shutdown {
+            return Err(AsyncDisplayError::WorkerStopped);
+        }
+
+        update(&mut state);
+        Ok(())
+    }
+
+    fn ensure_worker_alive(&self) -> Result<(), AsyncDisplayError> {
+        let worker_error = self
+            .worker_error
+            .lock()
+            .map_err(|_| AsyncDisplayError::WorkerFailed("display error mutex poisoned".into()))?;
+
+        if let Some(error) = worker_error.as_ref() {
+            return Err(AsyncDisplayError::WorkerFailed(error.clone()));
+        }
+
+        Ok(())
+    }
+}
+
+impl Drop for AsyncSegmentDisplay4 {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.shutdown = true;
+        }
+
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
 fn format_int(value: i16, format: IntFormat) -> Result<[u8; DISPLAY_WIDTH], DisplayError> {
     if !(-999..=9999).contains(&value) {
         return Err(DisplayError::IntegerOutOfRange(value));
@@ -341,5 +691,135 @@ fn apply_colon(frame: &mut [u8; DISPLAY_WIDTH], enabled: bool) {
         frame[1] |= COLON_MASK;
     } else {
         frame[1] &= !COLON_MASK;
+    }
+}
+
+fn run_display_worker(
+    mut display: SegmentDisplay4<'static>,
+    state: Arc<Mutex<BufferedState>>,
+    worker_error: Arc<Mutex<Option<String>>>,
+    worker_tick: Duration,
+) {
+    let mut content_generation = 0u64;
+    let mut colon_generation = 0u64;
+    let mut brightness_generation = 0u64;
+    let mut content_started = Instant::now();
+    let mut colon_started = Instant::now();
+    let mut last_rendered_frame = [u8::MAX; DISPLAY_WIDTH];
+
+    loop {
+        let snapshot = match state.lock() {
+            Ok(guard) => guard.clone(),
+            Err(_) => {
+                store_worker_error(
+                    &worker_error,
+                    "display worker state mutex poisoned".to_owned(),
+                );
+                return;
+            }
+        };
+
+        if snapshot.shutdown {
+            return;
+        }
+
+        let now = Instant::now();
+
+        if snapshot.content_generation != content_generation {
+            content_generation = snapshot.content_generation;
+            content_started = now;
+        }
+
+        if snapshot.colon_generation != colon_generation {
+            colon_generation = snapshot.colon_generation;
+            colon_started = now;
+        }
+
+        if snapshot.brightness_generation != brightness_generation {
+            if let Err(err) = display.set_brightness(snapshot.brightness) {
+                store_worker_error(
+                    &worker_error,
+                    format!("failed to apply display brightness: {err}"),
+                );
+                return;
+            }
+
+            brightness_generation = snapshot.brightness_generation;
+        }
+
+        let mut frame = frame_from_content(&snapshot.content, content_started, now);
+        apply_colon(
+            &mut frame,
+            colon_is_on(snapshot.colon, colon_started, now),
+        );
+
+        if frame != last_rendered_frame {
+            if let Err(err) = display.display.display_slice(0, &frame) {
+                store_worker_error(
+                    &worker_error,
+                    format!("failed to render display frame: {err:?}"),
+                );
+                return;
+            }
+
+            last_rendered_frame = frame;
+        }
+
+        thread::sleep(worker_tick);
+    }
+}
+
+fn frame_from_content(
+    content: &BufferedContent,
+    content_started: Instant,
+    now: Instant,
+) -> [u8; DISPLAY_WIDTH] {
+    match content {
+        BufferedContent::Static(frame) => *frame,
+        BufferedContent::Scroll { source, step_delay } => {
+            let windows = source.len().saturating_sub(DISPLAY_WIDTH) + 1;
+            let offset = if windows <= 1 {
+                0
+            } else {
+                animation_steps(now, content_started, *step_delay) % windows
+            };
+
+            let mut frame = [0u8; DISPLAY_WIDTH];
+            for (index, byte) in source[offset..offset + DISPLAY_WIDTH].iter().enumerate() {
+                frame[index] = from_ascii_byte(*byte);
+            }
+            frame
+        }
+    }
+}
+
+fn colon_is_on(mode: BufferedColonMode, colon_started: Instant, now: Instant) -> bool {
+    match mode {
+        BufferedColonMode::Static(enabled) => enabled,
+        BufferedColonMode::Blink {
+            initial_on,
+            interval,
+        } => {
+            if animation_steps(now, colon_started, interval) % 2 == 0 {
+                initial_on
+            } else {
+                !initial_on
+            }
+        }
+    }
+}
+
+fn animation_steps(now: Instant, started_at: Instant, step_delay: Duration) -> usize {
+    let step_millis = step_delay.as_millis();
+    if step_millis == 0 {
+        return 0;
+    }
+
+    (now.duration_since(started_at).as_millis() / step_millis) as usize
+}
+
+fn store_worker_error(worker_error: &Arc<Mutex<Option<String>>>, error: String) {
+    if let Ok(mut slot) = worker_error.lock() {
+        *slot = Some(error);
     }
 }
