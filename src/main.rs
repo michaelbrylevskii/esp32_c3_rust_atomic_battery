@@ -1,5 +1,5 @@
-use esp32_c3_rust_atomic_battery::nfc_tag::{self, KvFormatError, KvStore, NfcError};
-use esp32_c3_rust_atomic_battery::segment_display::{
+use esp32_c3_rust_atomic_battery::drivers::nfc_tag::{self, KvFormatError, KvStore, NfcError};
+use esp32_c3_rust_atomic_battery::drivers::segment_display::{
     Align, AsyncDisplayError, AsyncSegmentDisplay4, DisplayError, IntFormat,
 };
 use esp_idf_svc::hal::gpio::Pull;

@@ -269,7 +269,7 @@ info!("PN532 firmware raw: {:02X?}", fw);
 ### 2.1. Кастомная конфигурация инициализации
 
 ```rust
-use esp32_c3_rust_atomic_battery::nfc_tag::NfcInitConfig;
+use esp32_c3_rust_atomic_battery::drivers::nfc_tag::NfcInitConfig;
 use std::time::Duration;
 
 nfc.init_with_config(NfcInitConfig {

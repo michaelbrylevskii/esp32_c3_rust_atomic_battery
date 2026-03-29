@@ -133,7 +133,7 @@ pub struct AsyncDisplayConfig {
 ## Пример: sync API
 
 ```rust
-use esp32_c3_rust_atomic_battery::segment_display::{
+use esp32_c3_rust_atomic_battery::drivers::segment_display::{
     Align, IntFormat, SegmentDisplay4,
 };
 
@@ -152,7 +152,7 @@ display.show_int_pair(12, 34)?;
 ## Пример: async API
 
 ```rust
-use esp32_c3_rust_atomic_battery::segment_display::{
+use esp32_c3_rust_atomic_battery::drivers::segment_display::{
     Align, AsyncSegmentDisplay4, IntFormat,
 };
 use std::time::Duration;
