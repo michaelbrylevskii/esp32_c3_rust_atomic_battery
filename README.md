@@ -64,6 +64,25 @@ sudo usermod -aG uucp,lock $USER
 cargo check --all-targets
 ```
 
+Полная сборка всех таргетов:
+
+```bash
+cargo build --all-targets
+```
+
+Сборка только основного приложения:
+
+```bash
+cargo build --bin app
+```
+
+Сборка конкретного demo-таргета:
+
+```bash
+cargo build --bin nfc_demo
+cargo build --bin display_demo
+```
+
 Форматирование:
 
 ```bash
@@ -120,9 +139,9 @@ src/
 
 Что где лежит:
 
-- `src/common` — действительно общий код
-- `src/common/drivers` — reusable hardware wrappers
-- `src/common/utils` — место под будущие общие утилиты
+- `src/common` — общий код
+- `src/common/drivers` — hardware-обёртки и кастомные драйвера
+- `src/common/utils` — общие утилиты
 - `src/bin/app` — основной бинарник приложения
 - `src/bin/nfc_demo` — изолированный demo-таргет для PN532/NFC
 - `src/bin/display_demo` — изолированный demo-таргет для TM1637
@@ -154,7 +173,7 @@ src/
 
 ## Дополнительно
 
-Если нужен только high-level обзор API:
+Документация на hardware-обёртки:
 
 - NFC: [docs/nfc_tag.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/nfc_tag.md)
 - Display: [docs/segment_display.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/segment_display.md)
