@@ -1,5 +1,5 @@
-use crate::drivers::nfc_tag::{KvFormatError, NfcError};
-use crate::drivers::segment_display::{AsyncDisplayError, DisplayError};
+use common::drivers::nfc_tag::{KvFormatError, NfcError};
+use common::drivers::segment_display::{AsyncDisplayError, DisplayError};
 use esp_idf_svc::hal::i2c::I2cError;
 use esp_idf_svc::sys::EspError;
 use std::fmt;

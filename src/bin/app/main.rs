@@ -1,4 +1,6 @@
-use esp32_c3_rust_atomic_battery::app;
+mod errors;
+mod some_other_logic;
+
 use esp_idf_svc::hal::delay::FreeRtos;
 
 fn main() {
@@ -7,7 +9,7 @@ fn main() {
 
     log::info!("Starting app binary");
 
-    if let Err(err) = app::run() {
+    if let Err(err) = some_other_logic::run() {
         log::error!("Fatal error: {err:?}");
         loop {
             FreeRtos::delay_ms(1000);

@@ -2,7 +2,7 @@
 
 ## Что это такое
 
-Модуль [`segment_display`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/drivers/segment_display.rs) это high-level слой над `tm1637-embedded-hal` для 4-разрядного индикатора с физическим двоеточием между 2 и 3 разрядом.
+Модуль [`segment_display`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/segment_display.rs) это high-level слой над `tm1637-embedded-hal` для 4-разрядного индикатора с физическим двоеточием между 2 и 3 разрядом.
 
 В проекте он закрывает типовые задачи:
 
@@ -133,7 +133,7 @@ pub struct AsyncDisplayConfig {
 ## Пример: sync API
 
 ```rust
-use esp32_c3_rust_atomic_battery::drivers::segment_display::{
+use common::drivers::segment_display::{
     Align, IntFormat, SegmentDisplay4,
 };
 
@@ -152,7 +152,7 @@ display.show_int_pair(12, 34)?;
 ## Пример: async API
 
 ```rust
-use esp32_c3_rust_atomic_battery::drivers::segment_display::{
+use common::drivers::segment_display::{
     Align, AsyncSegmentDisplay4, IntFormat,
 };
 use std::time::Duration;
@@ -369,7 +369,7 @@ loop {
 
 ## Что уже есть в проекте
 
-Пример использования находится в [src/main.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/main.rs#L203).
+Пример использования находится в [src/bin/display_demo.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/bin/display_demo.rs#L1).
 
 Там уже показаны:
 

@@ -1,9 +1,64 @@
-use esp32_c3_rust_atomic_battery::app::AppError;
-use esp32_c3_rust_atomic_battery::drivers::nfc_tag::{self, KvStore, NfcError};
-use esp_idf_svc::hal::{delay::FreeRtos, peripherals::Peripherals};
+use common::drivers::nfc_tag::{self, KvFormatError, KvStore, NfcError};
+use common::drivers::segment_display::{AsyncDisplayError, DisplayError};
+use esp_idf_svc::hal::{delay::FreeRtos, i2c::I2cError, peripherals::Peripherals};
+use esp_idf_svc::sys::EspError;
 use log::{error, info, warn};
+use std::fmt;
 
 const WRITE_DEMO: bool = false;
+
+#[derive(Debug)]
+enum DemoError {
+    Esp(EspError),
+    Kv(KvFormatError),
+    Nfc(NfcError<I2cError>),
+    Display(DisplayError),
+    AsyncDisplay(AsyncDisplayError),
+}
+
+impl From<EspError> for DemoError {
+    fn from(value: EspError) -> Self {
+        Self::Esp(value)
+    }
+}
+
+impl From<KvFormatError> for DemoError {
+    fn from(value: KvFormatError) -> Self {
+        Self::Kv(value)
+    }
+}
+
+impl From<NfcError<I2cError>> for DemoError {
+    fn from(value: NfcError<I2cError>) -> Self {
+        Self::Nfc(value)
+    }
+}
+
+impl From<DisplayError> for DemoError {
+    fn from(value: DisplayError) -> Self {
+        Self::Display(value)
+    }
+}
+
+impl From<AsyncDisplayError> for DemoError {
+    fn from(value: AsyncDisplayError) -> Self {
+        Self::AsyncDisplay(value)
+    }
+}
+
+impl fmt::Display for DemoError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DemoError::Esp(err) => write!(f, "esp error: {err}"),
+            DemoError::Kv(err) => write!(f, "kv format error: {err}"),
+            DemoError::Nfc(err) => write!(f, "nfc error: {err}"),
+            DemoError::Display(err) => write!(f, "display error: {err}"),
+            DemoError::AsyncDisplay(err) => write!(f, "async display error: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for DemoError {}
 
 fn main() {
     esp_idf_svc::sys::link_patches();
@@ -19,7 +74,7 @@ fn main() {
     }
 }
 
-fn run() -> Result<(), AppError> {
+fn run() -> Result<(), DemoError> {
     let p = Peripherals::take()?;
 
     let mut nfc = nfc_tag::esp_idf::new_default(

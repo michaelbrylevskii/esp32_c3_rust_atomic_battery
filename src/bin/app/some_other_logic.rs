@@ -1,6 +1,6 @@
-use crate::app::AppError;
-use crate::drivers::nfc_tag::{self, KvStore};
-use crate::drivers::segment_display::AsyncSegmentDisplay4;
+use crate::errors::AppError;
+use common::drivers::nfc_tag::{self, KvStore};
+use common::drivers::segment_display::AsyncSegmentDisplay4;
 use esp_idf_svc::hal::gpio::Pull;
 use esp_idf_svc::hal::{
     delay::FreeRtos,
@@ -52,7 +52,6 @@ pub fn run() -> Result<(), AppError> {
 
         let battery_plugged = match read_nfc(&mut nfc) {
             Some(_battery_data) => {
-                // Разобрать и разложить по переменным.
                 let _ = (
                     BAT_SERVICE_KEY,
                     BAT_HEALTH_KEY,

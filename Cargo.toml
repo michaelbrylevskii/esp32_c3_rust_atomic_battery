@@ -6,19 +6,23 @@ edition = "2021"
 resolver = "2"
 rust-version = "1.82"
 
+[lib]
+name = "common"
+path = "src/common/lib.rs"
+
 [[bin]]
 name = "app"
-path = "src/bin/app.rs"
+path = "src/bin/app/main.rs"
 harness = false # do not use the built-in cargo test harness -> resolve rust-analyzer errors
 
 [[bin]]
 name = "display_demo"
-path = "src/bin/display_demo.rs"
+path = "src/bin/display_demo/main.rs"
 harness = false
 
 [[bin]]
 name = "nfc_demo"
-path = "src/bin/nfc_demo.rs"
+path = "src/bin/nfc_demo/main.rs"
 harness = false
 
 [profile.release]

@@ -2,7 +2,7 @@
 
 ## Что это такое
 
-Модуль [`nfc_tag`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/drivers/nfc_tag.rs) это high-level слой поверх:
+Модуль [`nfc_tag`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/nfc_tag.rs) это high-level слой поверх:
 
 - `pn532` как транспорта и набора низкоуровневых команд
 - NTAG / Type 2 Tag как памяти страницами
@@ -269,7 +269,7 @@ info!("PN532 firmware raw: {:02X?}", fw);
 ### 2.1. Кастомная конфигурация инициализации
 
 ```rust
-use esp32_c3_rust_atomic_battery::drivers::nfc_tag::NfcInitConfig;
+use common::drivers::nfc_tag::NfcInitConfig;
 use std::time::Duration;
 
 nfc.init_with_config(NfcInitConfig {
@@ -405,7 +405,7 @@ if let Some(tag) = nfc.poll_tag(Duration::from_millis(1000))? {
 
 ## Что делает `test_reader()` в проекте
 
-Текущая демонстрация использования находится в [src/main.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/main.rs#L142).
+Текущая демонстрация использования находится в [src/bin/nfc_demo.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/bin/nfc_demo.rs#L1).
 
 Сейчас там:
 
