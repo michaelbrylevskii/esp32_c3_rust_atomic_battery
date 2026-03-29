@@ -2,7 +2,7 @@
 
 ## Что это такое
 
-Модуль [`nfc_tag`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/nfc_tag.rs) это high-level слой поверх:
+Модуль [`nfc_tag`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/drivers/nfc_tag.rs) это high-level слой поверх:
 
 - `pn532` как транспорта и набора низкоуровневых команд
 - NTAG / Type 2 Tag как памяти страницами

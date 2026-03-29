@@ -2,7 +2,7 @@
 
 ## Что это такое
 
-Модуль [`segment_display`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/segment_display.rs) это high-level слой над `tm1637-embedded-hal` для 4-разрядного индикатора с физическим двоеточием между 2 и 3 разрядом.
+Модуль [`segment_display`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/drivers/segment_display.rs) это high-level слой над `tm1637-embedded-hal` для 4-разрядного индикатора с физическим двоеточием между 2 и 3 разрядом.
 
 В проекте он закрывает типовые задачи:
 

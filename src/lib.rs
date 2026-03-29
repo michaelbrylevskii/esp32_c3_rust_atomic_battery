@@ -1,2 +1,4 @@
-pub mod nfc_tag;
-pub mod segment_display;
+pub mod drivers;
+
+pub use drivers::nfc_tag;
+pub use drivers::segment_display;
