@@ -1,5 +1,5 @@
+mod atomic_machine;
 mod errors;
-mod some_other_logic;
 
 use esp_idf_svc::hal::delay::FreeRtos;
 
@@ -9,7 +9,7 @@ fn main() {
 
     log::info!("Starting app binary");
 
-    if let Err(err) = some_other_logic::run() {
+    if let Err(err) = atomic_machine::run() {
         log::error!("Fatal error: {err:?}");
         loop {
             FreeRtos::delay_ms(1000);
