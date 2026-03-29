@@ -292,18 +292,18 @@ impl<'d> SegmentDisplay4<'d> {
         self.render_current()
     }
 
-    /// Показывает время в виде `MM:SS`.
+    /// Показывает пару целых чисел в виде `NN:NN`.
     ///
     /// Физическое двоеточие управляется текущим состоянием `colon`.
-    pub fn show_mmss(&mut self, minutes: u8, seconds: u8) -> Result<(), DisplayError> {
-        if minutes > 99 {
-            return Err(DisplayError::MinutesOutOfRange(minutes));
+    pub fn show_int_pair(&mut self, left: u8, right: u8) -> Result<(), DisplayError> {
+        if left > 99 {
+            return Err(DisplayError::MinutesOutOfRange(left));
         }
-        if seconds > 99 {
-            return Err(DisplayError::SecondsOutOfRange(seconds));
+        if right > 99 {
+            return Err(DisplayError::SecondsOutOfRange(right));
         }
 
-        self.base_frame = formatters::clock_to_4digits(minutes, seconds, false);
+        self.base_frame = formatters::clock_to_4digits(left, right, false);
         self.render_current()
     }
 
@@ -527,14 +527,14 @@ impl AsyncSegmentDisplay4 {
         self.update_content(BufferedContent::Static(format_int(value, format)?))
     }
 
-    /// Показывает время в виде `MM:SS`.
-    pub fn show_mmss(&self, minutes: u8, seconds: u8) -> Result<(), AsyncDisplayError> {
-        let frame = formatters::clock_to_4digits(minutes, seconds, false);
-        if minutes > 99 {
-            return Err(DisplayError::MinutesOutOfRange(minutes).into());
+    /// Показывает пару целых чисел в виде `NN:NN`.
+    pub fn show_int_pair(&self, left: u8, right: u8) -> Result<(), AsyncDisplayError> {
+        let frame = formatters::clock_to_4digits(left, right, false);
+        if left > 99 {
+            return Err(DisplayError::MinutesOutOfRange(left).into());
         }
-        if seconds > 99 {
-            return Err(DisplayError::SecondsOutOfRange(seconds).into());
+        if right > 99 {
+            return Err(DisplayError::SecondsOutOfRange(right).into());
         }
 
         self.update_content(BufferedContent::Static(frame))

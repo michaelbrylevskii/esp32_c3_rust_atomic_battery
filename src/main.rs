@@ -154,7 +154,7 @@ fn run() -> Result<(), AppError> {
             }
         } else {
             red_led_pin.set_low();
-            display.show_mmss(15, 47)?;
+            display.show_int_pair(15, 47)?;
         }
 
         FreeRtos::delay_ms(10);
@@ -219,7 +219,7 @@ fn test_display() -> Result<(), AppError> {
         FreeRtos::delay_ms(1000);
 
         display.set_colon(true)?;
-        display.show_mmss(12, 34)?;
+        display.show_int_pair(12, 34)?;
         display.start_colon_blink(true, Duration::from_millis(500))?;
         FreeRtos::delay_ms(3000);
         display.stop_colon_blink(false)?;
