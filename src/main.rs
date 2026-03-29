@@ -253,9 +253,15 @@ fn test_reader() -> Result<(), AppError> {
     let mut demo_store = KvStore::new();
     demo_store.insert_string("name", "ESP32-C3")?;
     demo_store.insert_u8("counter", 42)?;
+    demo_store.insert_u16("limit", 1024)?;
+    demo_store.insert_u32("serial", 123_456)?;
+    demo_store.insert_u64("energy", 9_876_543_210)?;
     demo_store.insert_i8("temperature_offset", -5)?;
-    demo_store.insert_u4("mode", 9)?;
-    demo_store.insert_i4("delta", -3)?;
+    demo_store.insert_i16("bias", -32_000)?;
+    demo_store.insert_i32("temp_raw", -123_456)?;
+    demo_store.insert_i64("distance", -9_876_543_210)?;
+    demo_store.insert_f32("soc", 98.5)?;
+    demo_store.insert_f64("voltage", 12.625)?;
     demo_store.insert_bool("enabled", true)?;
 
     let mut wrote_once = false;

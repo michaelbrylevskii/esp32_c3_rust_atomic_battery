@@ -45,9 +45,15 @@
 
 - `Str(String)`
 - `U8(u8)`
+- `U16(u16)`
+- `U32(u32)`
+- `U64(u64)`
 - `I8(i8)`
-- `U4(u8)`
-- `I4(i8)`
+- `I16(i16)`
+- `I32(i32)`
+- `I64(i64)`
+- `F32(f32)`
+- `F64(f64)`
 - `Bool(bool)`
 
 Ограничения:
@@ -56,8 +62,8 @@
 - `key` не должен содержать `=`, `:`, `\n`, `\r`
 - строковые значения должны быть ASCII
 - строковые значения не должны содержать `\n`, `\r`
-- `u4` допускает только `0..=15`
-- `i4` допускает только `-8..=7`
+- `f32` и `f64` должны быть конечными значениями
+- `NaN`, `+inf`, `-inf` не поддерживаются
 
 ## Внутренний формат key-value
 
@@ -67,9 +73,15 @@
 KV1
 name=S:ESP32-C3
 counter=U8:42
+limit=U16:1024
+serial=U32:123456
+energy=U64:9876543210
 temperature_offset=I8:-5
-mode=U4:9
-delta=I4:-3
+bias=I16:-32000
+temp_raw=I32:-123456
+distance=I64:-9876543210
+soc=F32:98.5
+voltage=F64:12.625
 enabled=B:1
 ```
 
@@ -81,11 +93,29 @@ enabled=B:1
 Типовые префиксы:
 
 - `S` для строки
-- `U8` для `u8`
-- `I8` для `i8`
-- `U4` для `u4`
-- `I4` для `i4`
-- `B` для boolean
+  Обычный текст. Сейчас в библиотеке строковые значения ограничены ASCII.
+- `U8` для маленького беззнакового целого числа
+  Диапазон: `0..=255`.
+- `U16` для беззнакового целого числа побольше
+  Диапазон: `0..=65535`.
+- `U32` для 32-битного беззнакового целого числа
+  Диапазон: `0..=4294967295`.
+- `U64` для большого беззнакового целого числа
+  Диапазон: `0..=18446744073709551615`.
+- `I8` для маленького знакового целого числа
+  Поддерживает отрицательные значения. Диапазон: `-128..=127`.
+- `I16` для знакового целого числа побольше
+  Диапазон: `-32768..=32767`.
+- `I32` для 32-битного знакового целого числа
+  Диапазон: `-2147483648..=2147483647`.
+- `I64` для большого знакового целого числа
+  Диапазон: `-9223372036854775808..=9223372036854775807`.
+- `F32` для числа с плавающей точкой обычной точности
+  Подходит для дробных значений вроде `98.5`. В библиотеке разрешены только конечные значения, без `NaN` и бесконечностей.
+- `F64` для числа с плавающей точкой повышенной точности
+  Тоже подходит для дробных значений. В библиотеке разрешены только конечные значения, без `NaN` и бесконечностей.
+- `B` для логического значения
+  То есть `true` или `false`.
 
 Boolean хранится как:
 
@@ -127,9 +157,15 @@ pub struct TagInfo {
 - `KvStore::new()`
 - `insert_string(...)`
 - `insert_u8(...)`
+- `insert_u16(...)`
+- `insert_u32(...)`
+- `insert_u64(...)`
 - `insert_i8(...)`
-- `insert_u4(...)`
-- `insert_i4(...)`
+- `insert_i16(...)`
+- `insert_i32(...)`
+- `insert_i64(...)`
+- `insert_f32(...)`
+- `insert_f64(...)`
 - `insert_bool(...)`
 - `get(key)`
 - `entries()`
@@ -277,9 +313,15 @@ match nfc.poll_tag(Duration::from_millis(1000))? {
 let mut store = KvStore::new();
 store.insert_string("name", "ESP32-C3")?;
 store.insert_u8("counter", 42)?;
+store.insert_u16("limit", 1024)?;
+store.insert_u32("serial", 123456)?;
+store.insert_u64("energy", 9876543210)?;
 store.insert_i8("temperature_offset", -5)?;
-store.insert_u4("mode", 9)?;
-store.insert_i4("delta", -3)?;
+store.insert_i16("bias", -32000)?;
+store.insert_i32("temp_raw", -123456)?;
+store.insert_i64("distance", -9876543210)?;
+store.insert_f32("soc", 98.5)?;
+store.insert_f64("voltage", 12.625)?;
 store.insert_bool("enabled", true)?;
 
 nfc.write_kv_store(&store)?;
@@ -321,9 +363,15 @@ match store.get("counter") {
 let mut demo_store = KvStore::new();
 demo_store.insert_string("name", "ESP32-C3")?;
 demo_store.insert_u8("counter", 42)?;
+demo_store.insert_u16("limit", 1024)?;
+demo_store.insert_u32("serial", 123456)?;
+demo_store.insert_u64("energy", 9876543210)?;
 demo_store.insert_i8("temperature_offset", -5)?;
-demo_store.insert_u4("mode", 9)?;
-demo_store.insert_i4("delta", -3)?;
+demo_store.insert_i16("bias", -32000)?;
+demo_store.insert_i32("temp_raw", -123456)?;
+demo_store.insert_i64("distance", -9876543210)?;
+demo_store.insert_f32("soc", 98.5)?;
+demo_store.insert_f64("voltage", 12.625)?;
 demo_store.insert_bool("enabled", true)?;
 
 if let Some(tag) = nfc.poll_tag(Duration::from_millis(1000))? {

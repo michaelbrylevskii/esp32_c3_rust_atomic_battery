@@ -42,24 +42,40 @@ pub struct TagInfo {
 }
 
 /// Поддерживаемые типы значений для key-value хранилища.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum KvValue {
     /// ASCII-строка без переводов строки.
     Str(String),
     /// Беззнаковое 8-битное число.
     U8(u8),
+    /// Беззнаковое 16-битное число.
+    U16(u16),
+    /// Беззнаковое 32-битное число.
+    U32(u32),
+    /// Беззнаковое 64-битное число.
+    U64(u64),
     /// Знаковое 8-битное число.
     I8(i8),
-    /// Беззнаковое 4-битное число в диапазоне `0..=15`.
-    U4(u8),
-    /// Знаковое 4-битное число в диапазоне `-8..=7`.
-    I4(i8),
+    /// Знаковое 16-битное число.
+    I16(i16),
+    /// Знаковое 32-битное число.
+    I32(i32),
+    /// Знаковое 64-битное число.
+    I64(i64),
+    /// 32-битное число с плавающей точкой.
+    ///
+    /// Значение должно быть конечным: без `NaN`, `+inf`, `-inf`.
+    F32(f32),
+    /// 64-битное число с плавающей точкой.
+    ///
+    /// Значение должно быть конечным: без `NaN`, `+inf`, `-inf`.
+    F64(f64),
     /// Булево значение.
     Bool(bool),
 }
 
 /// Одна запись key-value хранилища.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KvEntry {
     /// ASCII-ключ.
     pub key: String,
@@ -68,7 +84,7 @@ pub struct KvEntry {
 }
 
 /// Набор key-value записей, который сериализуется в NDEF Text Record.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct KvStore {
     entries: Vec<KvEntry>,
 }
@@ -131,6 +147,33 @@ impl KvStore {
         self.insert(key, KvValue::U8(value))
     }
 
+    /// Удобный helper для `u16`.
+    pub fn insert_u16(
+        &mut self,
+        key: impl Into<String>,
+        value: u16,
+    ) -> Result<&mut Self, KvFormatError> {
+        self.insert(key, KvValue::U16(value))
+    }
+
+    /// Удобный helper для `u32`.
+    pub fn insert_u32(
+        &mut self,
+        key: impl Into<String>,
+        value: u32,
+    ) -> Result<&mut Self, KvFormatError> {
+        self.insert(key, KvValue::U32(value))
+    }
+
+    /// Удобный helper для `u64`.
+    pub fn insert_u64(
+        &mut self,
+        key: impl Into<String>,
+        value: u64,
+    ) -> Result<&mut Self, KvFormatError> {
+        self.insert(key, KvValue::U64(value))
+    }
+
     /// Удобный helper для `i8`.
     pub fn insert_i8(
         &mut self,
@@ -140,22 +183,49 @@ impl KvStore {
         self.insert(key, KvValue::I8(value))
     }
 
-    /// Удобный helper для `u4`.
-    pub fn insert_u4(
+    /// Удобный helper для `i16`.
+    pub fn insert_i16(
         &mut self,
         key: impl Into<String>,
-        value: u8,
+        value: i16,
     ) -> Result<&mut Self, KvFormatError> {
-        self.insert(key, KvValue::U4(value))
+        self.insert(key, KvValue::I16(value))
     }
 
-    /// Удобный helper для `i4`.
-    pub fn insert_i4(
+    /// Удобный helper для `i32`.
+    pub fn insert_i32(
         &mut self,
         key: impl Into<String>,
-        value: i8,
+        value: i32,
     ) -> Result<&mut Self, KvFormatError> {
-        self.insert(key, KvValue::I4(value))
+        self.insert(key, KvValue::I32(value))
+    }
+
+    /// Удобный helper для `i64`.
+    pub fn insert_i64(
+        &mut self,
+        key: impl Into<String>,
+        value: i64,
+    ) -> Result<&mut Self, KvFormatError> {
+        self.insert(key, KvValue::I64(value))
+    }
+
+    /// Удобный helper для `f32`.
+    pub fn insert_f32(
+        &mut self,
+        key: impl Into<String>,
+        value: f32,
+    ) -> Result<&mut Self, KvFormatError> {
+        self.insert(key, KvValue::F32(value))
+    }
+
+    /// Удобный helper для `f64`.
+    pub fn insert_f64(
+        &mut self,
+        key: impl Into<String>,
+        value: f64,
+    ) -> Result<&mut Self, KvFormatError> {
+        self.insert(key, KvValue::F64(value))
     }
 
     /// Удобный helper для `bool`.
@@ -244,9 +314,15 @@ impl KvValue {
         match self {
             KvValue::Str(_) => "S",
             KvValue::U8(_) => "U8",
+            KvValue::U16(_) => "U16",
+            KvValue::U32(_) => "U32",
+            KvValue::U64(_) => "U64",
             KvValue::I8(_) => "I8",
-            KvValue::U4(_) => "U4",
-            KvValue::I4(_) => "I4",
+            KvValue::I16(_) => "I16",
+            KvValue::I32(_) => "I32",
+            KvValue::I64(_) => "I64",
+            KvValue::F32(_) => "F32",
+            KvValue::F64(_) => "F64",
             KvValue::Bool(_) => "B",
         }
     }
@@ -255,9 +331,15 @@ impl KvValue {
         match self {
             KvValue::Str(value) => value.clone(),
             KvValue::U8(value) => value.to_string(),
+            KvValue::U16(value) => value.to_string(),
+            KvValue::U32(value) => value.to_string(),
+            KvValue::U64(value) => value.to_string(),
             KvValue::I8(value) => value.to_string(),
-            KvValue::U4(value) => value.to_string(),
-            KvValue::I4(value) => value.to_string(),
+            KvValue::I16(value) => value.to_string(),
+            KvValue::I32(value) => value.to_string(),
+            KvValue::I64(value) => value.to_string(),
+            KvValue::F32(value) => value.to_string(),
+            KvValue::F64(value) => value.to_string(),
             KvValue::Bool(value) => {
                 if *value {
                     String::from("1")
@@ -278,27 +360,51 @@ impl KvValue {
                 .parse::<u8>()
                 .map(KvValue::U8)
                 .map_err(|_| KvFormatError::InvalidNumber),
+            "U16" => raw_value
+                .parse::<u16>()
+                .map(KvValue::U16)
+                .map_err(|_| KvFormatError::InvalidNumber),
+            "U32" => raw_value
+                .parse::<u32>()
+                .map(KvValue::U32)
+                .map_err(|_| KvFormatError::InvalidNumber),
+            "U64" => raw_value
+                .parse::<u64>()
+                .map(KvValue::U64)
+                .map_err(|_| KvFormatError::InvalidNumber),
             "I8" => raw_value
                 .parse::<i8>()
                 .map(KvValue::I8)
                 .map_err(|_| KvFormatError::InvalidNumber),
-            "U4" => {
+            "I16" => raw_value
+                .parse::<i16>()
+                .map(KvValue::I16)
+                .map_err(|_| KvFormatError::InvalidNumber),
+            "I32" => raw_value
+                .parse::<i32>()
+                .map(KvValue::I32)
+                .map_err(|_| KvFormatError::InvalidNumber),
+            "I64" => raw_value
+                .parse::<i64>()
+                .map(KvValue::I64)
+                .map_err(|_| KvFormatError::InvalidNumber),
+            "F32" => {
                 let value = raw_value
-                    .parse::<u8>()
+                    .parse::<f32>()
                     .map_err(|_| KvFormatError::InvalidNumber)?;
-                if value > 0x0F {
-                    return Err(KvFormatError::ValueOutOfRange("u4"));
+                if !value.is_finite() {
+                    return Err(KvFormatError::NonFiniteFloat("f32"));
                 }
-                Ok(KvValue::U4(value))
+                Ok(KvValue::F32(value))
             }
-            "I4" => {
+            "F64" => {
                 let value = raw_value
-                    .parse::<i8>()
+                    .parse::<f64>()
                     .map_err(|_| KvFormatError::InvalidNumber)?;
-                if !(-8..=7).contains(&value) {
-                    return Err(KvFormatError::ValueOutOfRange("i4"));
+                if !value.is_finite() {
+                    return Err(KvFormatError::NonFiniteFloat("f64"));
                 }
-                Ok(KvValue::I4(value))
+                Ok(KvValue::F64(value))
             }
             "B" => match raw_value {
                 "0" => Ok(KvValue::Bool(false)),
@@ -321,7 +427,7 @@ pub enum KvFormatError {
     InvalidBoolean,
     InvalidAscii,
     InvalidKey,
-    ValueOutOfRange(&'static str),
+    NonFiniteFloat(&'static str),
     InvalidNdef,
     MissingTextRecord,
     MessageTooLarge,
@@ -764,10 +870,8 @@ fn validate_ascii_blob(value: &str) -> Result<(), KvFormatError> {
 fn validate_value(value: &KvValue) -> Result<(), KvFormatError> {
     match value {
         KvValue::Str(text) => validate_ascii_value(text),
-        KvValue::U4(number) if *number > 0x0F => Err(KvFormatError::ValueOutOfRange("u4")),
-        KvValue::I4(number) if !(-8..=7).contains(number) => {
-            Err(KvFormatError::ValueOutOfRange("i4"))
-        }
+        KvValue::F32(number) if !number.is_finite() => Err(KvFormatError::NonFiniteFloat("f32")),
+        KvValue::F64(number) if !number.is_finite() => Err(KvFormatError::NonFiniteFloat("f64")),
         _ => Ok(()),
     }
 }
@@ -880,9 +984,15 @@ mod tests {
         let mut store = KvStore::new();
         store.insert_string("name", "ESP32-C3").unwrap();
         store.insert_u8("count", 42).unwrap();
+        store.insert_u16("limit", 1024).unwrap();
+        store.insert_u32("serial", 123_456).unwrap();
+        store.insert_u64("energy", 9_876_543_210).unwrap();
         store.insert_i8("offset", -12).unwrap();
-        store.insert_u4("mode", 9).unwrap();
-        store.insert_i4("delta", -3).unwrap();
+        store.insert_i16("bias", -32000).unwrap();
+        store.insert_i32("temp_raw", -123_456).unwrap();
+        store.insert_i64("distance", -9_876_543_210).unwrap();
+        store.insert_f32("soc", 98.5).unwrap();
+        store.insert_f64("voltage", 12.625).unwrap();
         store.insert_bool("enabled", true).unwrap();
 
         let text = store.to_text().unwrap();
@@ -892,15 +1002,19 @@ mod tests {
     }
 
     #[test]
-    fn kv_store_rejects_out_of_range_nibbles() {
+    fn kv_store_rejects_non_finite_floats() {
         let mut store = KvStore::new();
         assert_eq!(
-            store.insert_u4("mode", 16).unwrap_err(),
-            KvFormatError::ValueOutOfRange("u4")
+            store.insert_f32("bad32", f32::NAN).unwrap_err(),
+            KvFormatError::NonFiniteFloat("f32")
         );
         assert_eq!(
-            store.insert_i4("delta", 8).unwrap_err(),
-            KvFormatError::ValueOutOfRange("i4")
+            store.insert_f64("bad64", f64::INFINITY).unwrap_err(),
+            KvFormatError::NonFiniteFloat("f64")
+        );
+        assert_eq!(
+            KvStore::from_text("KV1\nvalue=F32:NaN").unwrap_err(),
+            KvFormatError::NonFiniteFloat("f32")
         );
     }
 
