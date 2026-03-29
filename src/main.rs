@@ -251,7 +251,7 @@ fn test_reader() -> Result<(), AppError> {
     info!("PN532 firmware raw: {:02X?}", fw);
 
     let mut demo_store = KvStore::new();
-    demo_store.insert_string("name", "ESP32-C3")?;
+    demo_store.insert_string("name", "Привет,\nESP32-C3")?;
     demo_store.insert_u8("counter", 42)?;
     demo_store.insert_u16("limit", 1024)?;
     demo_store.insert_u32("serial", 123_456)?;

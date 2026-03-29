@@ -44,7 +44,7 @@ pub struct TagInfo {
 /// Поддерживаемые типы значений для key-value хранилища.
 #[derive(Clone, Debug, PartialEq)]
 pub enum KvValue {
-    /// ASCII-строка без переводов строки.
+    /// UTF-8 строка.
     Str(String),
     /// Беззнаковое 8-битное число.
     U8(u8),
@@ -251,7 +251,7 @@ impl KvStore {
             text.push('=');
             text.push_str(entry.value.type_tag());
             text.push(':');
-            text.push_str(&entry.value.to_ascii_value());
+            text.push_str(&entry.value.to_storage_value());
         }
 
         Ok(text)
@@ -327,9 +327,9 @@ impl KvValue {
         }
     }
 
-    fn to_ascii_value(&self) -> String {
+    fn to_storage_value(&self) -> String {
         match self {
-            KvValue::Str(value) => value.clone(),
+            KvValue::Str(value) => escape_string_value(value),
             KvValue::U8(value) => value.to_string(),
             KvValue::U16(value) => value.to_string(),
             KvValue::U32(value) => value.to_string(),
@@ -352,10 +352,7 @@ impl KvValue {
 
     fn from_parts(type_tag: &str, raw_value: &str) -> Result<Self, KvFormatError> {
         match type_tag {
-            "S" => {
-                validate_ascii_value(raw_value)?;
-                Ok(KvValue::Str(raw_value.to_owned()))
-            }
+            "S" => Ok(KvValue::Str(unescape_string_value(raw_value)?)),
             "U8" => raw_value
                 .parse::<u8>()
                 .map(KvValue::U8)
@@ -425,8 +422,9 @@ pub enum KvFormatError {
     InvalidTypeTag,
     InvalidNumber,
     InvalidBoolean,
-    InvalidAscii,
     InvalidKey,
+    InvalidEscapeSequence,
+    TrailingEscape,
     NonFiniteFloat(&'static str),
     InvalidNdef,
     MissingTextRecord,
@@ -708,7 +706,6 @@ where
     }
 
     fn write_text_payload(&mut self, text: &str) -> Result<(), NfcError<I::Error>> {
-        validate_ascii_blob(text)?;
         let capacity = self.read_user_capacity()?;
         let ndef_bytes = encode_text_record(text)?;
         let tlv = encode_ndef_tlv(&ndef_bytes);
@@ -851,25 +848,8 @@ fn validate_key(key: &str) -> Result<(), KvFormatError> {
     Ok(())
 }
 
-fn validate_ascii_value(value: &str) -> Result<(), KvFormatError> {
-    if !value.is_ascii() || value.contains('\n') || value.contains('\r') {
-        return Err(KvFormatError::InvalidAscii);
-    }
-
-    Ok(())
-}
-
-fn validate_ascii_blob(value: &str) -> Result<(), KvFormatError> {
-    if !value.is_ascii() {
-        return Err(KvFormatError::InvalidAscii);
-    }
-
-    Ok(())
-}
-
 fn validate_value(value: &KvValue) -> Result<(), KvFormatError> {
     match value {
-        KvValue::Str(text) => validate_ascii_value(text),
         KvValue::F32(number) if !number.is_finite() => Err(KvFormatError::NonFiniteFloat("f32")),
         KvValue::F64(number) if !number.is_finite() => Err(KvFormatError::NonFiniteFloat("f64")),
         _ => Ok(()),
@@ -902,12 +882,51 @@ fn decode_text_record(bytes: &[u8]) -> Result<String, KvFormatError> {
     };
 
     match &record.payload {
-        Payload::RTD(RecordType::Text { txt, .. }) => {
-            validate_ascii_blob(txt)?;
-            Ok((*txt).to_owned())
-        }
+        Payload::RTD(RecordType::Text { txt, .. }) => Ok((*txt).to_owned()),
         _ => Err(KvFormatError::MissingTextRecord),
     }
+}
+
+fn escape_string_value(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            _ => escaped.push(ch),
+        }
+    }
+
+    escaped
+}
+
+fn unescape_string_value(value: &str) -> Result<String, KvFormatError> {
+    let mut unescaped = String::with_capacity(value.len());
+    let mut chars = value.chars();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            unescaped.push(ch);
+            continue;
+        }
+
+        let Some(escaped) = chars.next() else {
+            return Err(KvFormatError::TrailingEscape);
+        };
+
+        match escaped {
+            '\\' => unescaped.push('\\'),
+            'n' => unescaped.push('\n'),
+            'r' => unescaped.push('\r'),
+            't' => unescaped.push('\t'),
+            _ => return Err(KvFormatError::InvalidEscapeSequence),
+        }
+    }
+
+    Ok(unescaped)
 }
 
 fn encode_ndef_tlv(ndef_bytes: &[u8]) -> Vec<u8> {
@@ -982,7 +1001,7 @@ mod tests {
     #[test]
     fn kv_store_text_roundtrip() {
         let mut store = KvStore::new();
-        store.insert_string("name", "ESP32-C3").unwrap();
+        store.insert_string("name", "Привет,\nESP32-C3").unwrap();
         store.insert_u8("count", 42).unwrap();
         store.insert_u16("limit", 1024).unwrap();
         store.insert_u32("serial", 123_456).unwrap();
@@ -1020,9 +1039,28 @@ mod tests {
 
     #[test]
     fn ndef_text_roundtrip() {
-        let raw = encode_text_record("KV1\nname=S:Hello").unwrap();
+        let raw = encode_text_record("KV1\nname=S:Привет\\nмир").unwrap();
         let text = decode_text_record(&raw).unwrap();
-        assert_eq!(text, "KV1\nname=S:Hello");
+        assert_eq!(text, "KV1\nname=S:Привет\\nмир");
+    }
+
+    #[test]
+    fn string_escape_roundtrip() {
+        let original = "Первая строка\nВторая строка\r\nПуть: C:\\tmp\tok";
+        let escaped = escape_string_value(original);
+        assert_eq!(unescape_string_value(&escaped).unwrap(), original);
+    }
+
+    #[test]
+    fn string_escape_rejects_invalid_sequences() {
+        assert_eq!(
+            unescape_string_value("bad\\x").unwrap_err(),
+            KvFormatError::InvalidEscapeSequence
+        );
+        assert_eq!(
+            unescape_string_value("bad\\").unwrap_err(),
+            KvFormatError::TrailingEscape
+        );
     }
 
     #[test]
