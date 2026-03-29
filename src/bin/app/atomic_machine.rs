@@ -1,12 +1,7 @@
 use crate::errors::AppError;
+use crate::hardware::AtomicMachineHardware;
 use common::drivers::nfc_tag::{self, KvStore};
-use common::drivers::segment_display::AsyncSegmentDisplay4;
-use esp_idf_svc::hal::gpio::Pull;
-use esp_idf_svc::hal::{
-    delay::FreeRtos,
-    gpio::{Level, PinDriver},
-    peripherals::Peripherals,
-};
+use esp_idf_svc::hal::delay::FreeRtos;
 use log::info;
 use std::time::Duration;
 
@@ -16,32 +11,7 @@ const BAT_CHARGE_KEY: &str = "charge";
 const BAT_CONSUMPTION_KEY: &str = "consumption";
 
 pub fn run() -> Result<(), AppError> {
-    let p = Peripherals::take()?;
-
-    let mut board_led_pin = PinDriver::output(p.pins.gpio8)?;
-    board_led_pin.set_level(Level::Low)?;
-
-    let mut red_led_pin = PinDriver::output(p.pins.gpio0)?;
-    red_led_pin.set_level(Level::High)?;
-
-    let mut green_led_pin = PinDriver::output(p.pins.gpio1)?;
-    green_led_pin.set_level(Level::Low)?;
-
-    let switch_pin = PinDriver::input(p.pins.gpio10, Pull::Up)?;
-
-    let mut nfc = nfc_tag::esp_idf::new_default(
-        p.i2c0,
-        p.pins.gpio3, // SDA
-        p.pins.gpio4, // SCL
-    )?;
-    nfc.init_default()?;
-
-    let display = AsyncSegmentDisplay4::new(
-        p.pins.gpio5, // CLK
-        p.pins.gpio6, // DIO
-    )?;
-
-    display.clear()?;
+    let mut hw = AtomicMachineHardware::take()?;
 
     let mut switch_enabled = false;
     let mut battery_healthy = false;
@@ -50,7 +20,7 @@ pub fn run() -> Result<(), AppError> {
     loop {
         info!("Loop begin");
 
-        let battery_plugged = match read_nfc(&mut nfc) {
+        let battery_plugged = match read_nfc(&mut hw.nfc) {
             Some(_battery_data) => {
                 let _ = (
                     BAT_SERVICE_KEY,
@@ -64,28 +34,29 @@ pub fn run() -> Result<(), AppError> {
             None => false,
         };
 
-        let switch_enabled_local = switch_pin.is_low();
+        let switch_enabled_local = hw.switch.is_low();
         let switch_changed = switch_enabled_local != switch_enabled;
         if switch_changed {
             switch_enabled = switch_enabled_local;
         }
 
         if !battery_plugged {
-            red_led_pin.set_high()?;
+            hw.red_led.set_high()?;
             if switch_changed && switch_enabled {
-                display.start_scroll_text("no bat", Duration::from_millis(250))?;
+                hw.display
+                    .start_scroll_text("no bat", Duration::from_millis(250))?;
             }
             if switch_changed && !switch_enabled {
-                display.clear()?;
+                hw.display.clear()?;
             }
         } else {
-            red_led_pin.set_low()?;
-            display.show_int_pair(15, 47)?;
+            hw.red_led.set_low()?;
+            hw.display.show_int_pair(15, 47)?;
         }
 
         FreeRtos::delay_ms(10);
 
-        let _ = (&mut board_led_pin, &mut green_led_pin);
+        let _ = (&mut hw.board_led, &mut hw.green_led);
     }
 }
 

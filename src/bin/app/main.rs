@@ -1,5 +1,6 @@
 mod atomic_machine;
 mod errors;
+mod hardware;
 
 use esp_idf_svc::hal::delay::FreeRtos;
 
