@@ -13,7 +13,9 @@ const CHARGE_PERSIST_INTERVAL: Duration = Duration::from_secs(60);
 const NO_BAT_SCROLL_STEP: Duration = Duration::from_millis(250);
 const ERROR_SCROLL_STEP: Duration = Duration::from_millis(250);
 const SERVICE_SCROLL_STEP: Duration = Duration::from_millis(150);
-const SERVICE_BLINK_STEP: Duration = Duration::from_millis(120);
+const ACTIVE_COUNTER_COLON_BLINK_INTERVAL: Duration = Duration::from_millis(500);
+const SERVICE_FEEDBACK_BLINK_CYCLES: u32 = 3;
+const MIN_SERVICE_BLINK_INTERVAL: Duration = Duration::from_millis(90);
 
 pub fn run() -> Result<(), AppError> {
     let mut hw = AtomicMachineHardware::take()?;
@@ -402,7 +404,11 @@ impl ActiveBatterySession {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum DisplayState {
     Clear,
-    Counter { minutes: u8, seconds: u8 },
+    Counter {
+        minutes: u8,
+        seconds: u8,
+        blink_colon: bool,
+    },
     NoBattery,
     Error,
     ServiceMessage(String),
@@ -413,6 +419,7 @@ struct ServiceFeedback {
     message: String,
     started_at: Instant,
     ends_at: Instant,
+    blink_interval: Duration,
 }
 
 fn read_atomic_tag(nfc: &mut nfc_tag::esp_idf::EspNfcTag<'_>) -> Option<DetectedTag> {
@@ -426,6 +433,7 @@ fn read_atomic_tag(nfc: &mut nfc_tag::esp_idf::EspNfcTag<'_>) -> Option<Detected
                 }
             },
             Err(NfcError::NoNdefMessage) => None,
+            Err(NfcError::InvalidResponse("ntag_read returned fewer than 17 bytes")) => None,
             Err(err) => {
                 warn!("Failed to read NFC store: {err}");
                 None
@@ -450,20 +458,18 @@ fn apply_service_tag(
     *consumption_per_sec = service.consumption_per_sec;
     storage.save_consumption_per_sec(service.consumption_per_sec)?;
 
-    let message = format!("rate {}", service.consumption_per_sec);
+    let message = service.consumption_per_sec.to_string();
     hw.display
         .start_scroll_text(&message, SERVICE_SCROLL_STEP)?;
 
-    let windows = message.len().saturating_add(5);
-    let duration = SERVICE_SCROLL_STEP
-        .checked_mul(windows as u32)
-        .unwrap_or(Duration::from_secs(3))
-        + Duration::from_millis(200);
+    let duration = single_scroll_duration(&message, SERVICE_SCROLL_STEP);
+    let blink_interval = feedback_blink_interval(duration);
 
     *feedback = Some(ServiceFeedback {
         message,
         started_at: now,
         ends_at: now + duration,
+        blink_interval,
     });
 
     info!(
@@ -563,11 +569,11 @@ fn resolve_display_state(
 ) -> DisplayState {
     if let Some(session) = active_session {
         let (minutes, seconds) = remaining_time_mmss(&session.battery, consumption_per_sec);
-        if switch_enabled && session.battery.healthy && session.battery.charge > 0 {
-            return DisplayState::Counter { minutes, seconds };
-        }
-
-        return DisplayState::Counter { minutes, seconds };
+        return DisplayState::Counter {
+            minutes,
+            seconds,
+            blink_colon: switch_enabled && session.battery.healthy && session.battery.charge > 0,
+        };
     }
 
     if let Some(DetectedTag {
@@ -586,7 +592,11 @@ fn resolve_display_state(
         }
 
         let (minutes, seconds) = remaining_time_mmss(battery, consumption_per_sec);
-        return DisplayState::Counter { minutes, seconds };
+        return DisplayState::Counter {
+            minutes,
+            seconds,
+            blink_colon: false,
+        };
     }
 
     if switch_enabled {
@@ -601,17 +611,33 @@ fn apply_display_state(
     display_state: &DisplayState,
 ) -> Result<(), AppError> {
     match display_state {
-        DisplayState::Clear => hw.display.clear()?,
-        DisplayState::Counter { minutes, seconds } => {
+        DisplayState::Clear => {
+            hw.display.stop_colon_blink(false)?;
+            hw.display.clear()?;
+        }
+        DisplayState::Counter {
+            minutes,
+            seconds,
+            blink_colon,
+        } => {
             hw.display.show_int_pair(*minutes, *seconds)?;
+            if *blink_colon {
+                hw.display
+                    .start_colon_blink(true, ACTIVE_COUNTER_COLON_BLINK_INTERVAL)?;
+            } else {
+                hw.display.stop_colon_blink(true)?;
+            }
         }
         DisplayState::NoBattery => {
+            hw.display.stop_colon_blink(false)?;
             hw.display.start_scroll_text("no bat", NO_BAT_SCROLL_STEP)?;
         }
         DisplayState::Error => {
+            hw.display.stop_colon_blink(false)?;
             hw.display.start_scroll_error(ERROR_SCROLL_STEP)?;
         }
         DisplayState::ServiceMessage(message) => {
+            hw.display.stop_colon_blink(false)?;
             hw.display.start_scroll_text(message, SERVICE_SCROLL_STEP)?;
         }
     }
@@ -631,7 +657,8 @@ fn apply_led_state(
 ) -> Result<(), AppError> {
     if let Some(active_feedback) = feedback {
         let elapsed = now.duration_since(active_feedback.started_at).as_millis();
-        let phase = (elapsed / SERVICE_BLINK_STEP.as_millis()) % 2 == 0;
+        let interval_ms = active_feedback.blink_interval.as_millis().max(1);
+        let phase = (elapsed / interval_ms) % 2 == 0;
 
         if phase {
             hw.red_led.set_high()?;
@@ -704,6 +731,20 @@ fn encode_uid_hex(uid: &[u8]) -> String {
         let _ = write!(&mut value, "{byte:02X}");
     }
     value
+}
+
+fn single_scroll_duration(message: &str, step_delay: Duration) -> Duration {
+    step_delay
+        .checked_mul(message.len().saturating_add(5) as u32)
+        .unwrap_or(Duration::from_secs(2))
+}
+
+fn feedback_blink_interval(duration: Duration) -> Duration {
+    let phase_count = u128::from(SERVICE_FEEDBACK_BLINK_CYCLES.saturating_mul(2));
+    let interval_ms = (duration.as_millis() / phase_count)
+        .max(MIN_SERVICE_BLINK_INTERVAL.as_millis())
+        .min(u128::from(u32::MAX));
+    Duration::from_millis(interval_ms as u64)
 }
 
 fn matches_active_session_record(
