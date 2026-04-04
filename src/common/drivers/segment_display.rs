@@ -359,9 +359,14 @@ impl<'d> SegmentDisplay4<'d> {
 #[derive(Clone)]
 enum BufferedContent {
     Static([u8; DISPLAY_WIDTH]),
+    Countdown {
+        initial_total_seconds: u32,
+        step_period: Duration,
+    },
     Scroll {
         source: Vec<u8>,
         step_delay: Duration,
+        cycles: Option<u32>,
     },
 }
 
@@ -371,6 +376,11 @@ enum BufferedColonMode {
     Blink {
         initial_on: bool,
         interval: Duration,
+    },
+    Pulse {
+        initial_on: bool,
+        period: Duration,
+        on_duration: Duration,
     },
 }
 
@@ -492,6 +502,7 @@ impl AsyncSegmentDisplay4 {
             let enabled = match state.colon {
                 BufferedColonMode::Static(enabled) => enabled,
                 BufferedColonMode::Blink { initial_on, .. } => initial_on,
+                BufferedColonMode::Pulse { initial_on, .. } => initial_on,
             };
             state.colon = BufferedColonMode::Static(!enabled);
             state.colon_generation = state.colon_generation.wrapping_add(1);
@@ -540,6 +551,24 @@ impl AsyncSegmentDisplay4 {
         self.update_content(BufferedContent::Static(frame))
     }
 
+    /// Показывает автономный countdown в формате `MM:SS`.
+    ///
+    /// Значение пересчитывается фоновой задачей без участия основного цикла.
+    pub fn start_countdown(
+        &self,
+        initial_total_seconds: u32,
+        step_period: Duration,
+    ) -> Result<(), AsyncDisplayError> {
+        if step_period.is_zero() {
+            return Err(AsyncDisplayError::InvalidAnimationDelay);
+        }
+
+        self.update_content(BufferedContent::Countdown {
+            initial_total_seconds,
+            step_period,
+        })
+    }
+
     /// Показывает короткий ASCII-текст, обрезая его до четырёх символов.
     pub fn show_text(&self, text: &str, align: Align) -> Result<(), AsyncDisplayError> {
         self.update_content(BufferedContent::Static(format_text_frame(text, align)?))
@@ -559,6 +588,16 @@ impl AsyncSegmentDisplay4 {
         text: &str,
         step_delay: Duration,
     ) -> Result<(), AsyncDisplayError> {
+        self.start_scroll_text_cycles(text, step_delay, None)
+    }
+
+    /// Включает бегущую строку с заданным числом полных циклов.
+    pub fn start_scroll_text_cycles(
+        &self,
+        text: &str,
+        step_delay: Duration,
+        cycles: Option<u32>,
+    ) -> Result<(), AsyncDisplayError> {
         if step_delay.is_zero() {
             return Err(AsyncDisplayError::InvalidAnimationDelay);
         }
@@ -566,12 +605,34 @@ impl AsyncSegmentDisplay4 {
         self.update_content(BufferedContent::Scroll {
             source: build_scroll_source(text)?,
             step_delay,
+            cycles,
         })
     }
 
     /// Включает непрерывную бегущую строку с сообщением `Error`.
     pub fn start_scroll_error(&self, step_delay: Duration) -> Result<(), AsyncDisplayError> {
         self.start_scroll_text(ERROR_TEXT, step_delay)
+    }
+
+    /// Запускает синхронный импульс двоеточия с заданным полным периодом.
+    pub fn start_colon_pulse(
+        &self,
+        initial_on: bool,
+        period: Duration,
+        on_duration: Duration,
+    ) -> Result<(), AsyncDisplayError> {
+        if period.is_zero() || on_duration.is_zero() || on_duration > period {
+            return Err(AsyncDisplayError::InvalidAnimationDelay);
+        }
+
+        self.with_state(|state| {
+            state.colon = BufferedColonMode::Pulse {
+                initial_on,
+                period,
+                on_duration,
+            };
+            state.colon_generation = state.colon_generation.wrapping_add(1);
+        })
     }
 
     /// Возвращает последнюю фатальную ошибку фоновой задачи, если она была.
@@ -773,12 +834,40 @@ fn frame_from_content(
 ) -> [u8; DISPLAY_WIDTH] {
     match content {
         BufferedContent::Static(frame) => *frame,
-        BufferedContent::Scroll { source, step_delay } => {
+        BufferedContent::Countdown {
+            initial_total_seconds,
+            step_period,
+        } => {
+            let total_seconds = countdown_remaining_seconds(
+                *initial_total_seconds,
+                content_started,
+                now,
+                *step_period,
+            );
+            let (minutes, seconds) = seconds_to_pair(total_seconds);
+            formatters::clock_to_4digits(minutes, seconds, false)
+        }
+        BufferedContent::Scroll {
+            source,
+            step_delay,
+            cycles,
+        } => {
             let windows = source.len().saturating_sub(DISPLAY_WIDTH) + 1;
             let offset = if windows <= 1 {
                 0
             } else {
-                animation_steps(now, content_started, *step_delay) % windows
+                let raw_steps = animation_steps(now, content_started, *step_delay);
+                match cycles {
+                    Some(cycle_count) => {
+                        let total_steps = windows.saturating_mul((*cycle_count).max(1) as usize);
+                        if raw_steps >= total_steps.saturating_sub(1) {
+                            windows - 1
+                        } else {
+                            raw_steps % windows
+                        }
+                    }
+                    None => raw_steps % windows,
+                }
             };
 
             let mut frame = [0u8; DISPLAY_WIDTH];
@@ -803,7 +892,37 @@ fn colon_is_on(mode: BufferedColonMode, colon_started: Instant, now: Instant) ->
                 !initial_on
             }
         }
+        BufferedColonMode::Pulse {
+            initial_on,
+            period,
+            on_duration,
+        } => {
+            let elapsed = now.duration_since(colon_started).as_millis();
+            let period_ms = period.as_millis().max(1);
+            let on_duration_ms = on_duration.as_millis().min(period_ms);
+            let phase_ms = elapsed % period_ms;
+            if phase_ms < on_duration_ms {
+                initial_on
+            } else {
+                !initial_on
+            }
+        }
     }
+}
+
+fn countdown_remaining_seconds(
+    initial_total_seconds: u32,
+    started_at: Instant,
+    now: Instant,
+    step_period: Duration,
+) -> u32 {
+    let elapsed_steps = animation_steps(now, started_at, step_period) as u32;
+    initial_total_seconds.saturating_sub(elapsed_steps)
+}
+
+fn seconds_to_pair(total_seconds: u32) -> (u8, u8) {
+    let capped = total_seconds.min((99 * 60 + 59) as u32);
+    ((capped / 60) as u8, (capped % 60) as u8)
 }
 
 fn animation_steps(now: Instant, started_at: Instant, step_delay: Duration) -> usize {

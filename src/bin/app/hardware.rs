@@ -1,4 +1,7 @@
 use crate::errors::AppError;
+use common::drivers::led_indicator::{
+    AsyncLedConfig, AsyncLedController, DigitalLedGroup, LedPolarity,
+};
 use common::drivers::nfc_tag;
 use common::drivers::segment_display::AsyncSegmentDisplay4;
 use esp_idf_svc::hal::gpio::{Input, Output};
@@ -9,11 +12,10 @@ use esp_idf_svc::hal::{
 
 pub struct AtomicMachineHardware<'d> {
     _board_led: PinDriver<'d, Output>,
-    pub red_led: PinDriver<'d, Output>,
-    pub green_led: PinDriver<'d, Output>,
     pub switch: PinDriver<'d, Input>,
-    pub nfc: nfc_tag::esp_idf::EspNfcTag<'d>,
+    pub nfc: nfc_tag::esp_idf::AsyncEspNfcTag<'static>,
     pub display: AsyncSegmentDisplay4,
+    pub indicator: AsyncLedController<2>,
 }
 
 impl AtomicMachineHardware<'static> {
@@ -35,27 +37,30 @@ impl AtomicMachineHardware<'static> {
         let mut board_led = PinDriver::output(board_led_pin)?;
         board_led.set_level(Level::Low)?;
 
-        let mut red_led = PinDriver::output(red_led_pin)?;
-        red_led.set_level(Level::High)?;
-
-        let mut green_led = PinDriver::output(green_led_pin)?;
-        green_led.set_level(Level::Low)?;
+        let red_led = PinDriver::output(red_led_pin)?;
+        let green_led = PinDriver::output(green_led_pin)?;
 
         let switch = PinDriver::input(switch_pin, Pull::Up)?;
 
         let mut nfc = nfc_tag::esp_idf::new_default(nfc_i2c, nfc_i2c_sda_pin, nfc_i2c_scl_pin)?;
         nfc.init_default()?;
+        let nfc = nfc_tag::AsyncNfcTag::new(nfc, nfc_tag::AsyncNfcConfig::default())?;
 
         let display = AsyncSegmentDisplay4::new(display_clk_pin, display_dio_pin)?;
         display.clear()?;
 
+        let led_group = DigitalLedGroup::new(
+            [red_led, green_led],
+            [LedPolarity::ActiveHigh, LedPolarity::ActiveHigh],
+        )?;
+        let indicator = AsyncLedController::new(led_group, AsyncLedConfig::default())?;
+
         Ok(Self {
             _board_led: board_led,
-            red_led,
-            green_led,
             switch,
             nfc,
             display,
+            indicator,
         })
     }
 }

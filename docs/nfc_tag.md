@@ -14,6 +14,8 @@
 - `poll_tag()`
 - `read_kv_store()`
 - `write_kv_store()`
+- крутить PN532 в отдельном worker-потоке и читать только snapshot из main loop
+- выполнять редкие команды записи через async command queue
 
 ## Что умеет модуль
 
@@ -189,6 +191,61 @@ High-level обёртка над `Pn532`.
 - `read_kv_store()`
 - `write_kv_store(&store)`
 
+### `AsyncNfcTag`
+
+Неблокирующая обёртка над `NfcTag`.
+
+Она полезна, когда:
+
+- основной цикл не должен блокироваться на `poll_tag()`
+- NFC опрашивается постоянно
+- запись в метку бывает редко, но UI и state machine должны жить независимо
+
+Основные методы:
+
+- `AsyncNfcTag::new(nfc, config)`
+- `snapshot()`
+- `write_kv_store_for_tag(expected_uid, store)`
+- `last_worker_error()`
+
+Как это работает:
+
+- worker сам опрашивает `PN532`
+- worker кэширует последнюю увиденную метку
+- main loop читает только быстрый `snapshot()`
+- запись идёт отдельной командой в тот же worker, поэтому транспорт остаётся централизован в одном месте
+
+### `AsyncNfcSnapshot`
+
+Снимок текущего состояния async worker'а:
+
+```rust
+pub struct AsyncNfcSnapshot {
+    pub generation: u64,
+    pub tag: Option<AsyncObservedTag>,
+}
+```
+
+Где:
+
+- `generation` увеличивается при смене наблюдаемого состояния
+- `tag = None` означает, что метки в поле сейчас нет
+
+### `AsyncObservedTag`
+
+Информация о последней увиденной метке:
+
+- `info: TagInfo`
+- `payload: AsyncTagPayload`
+
+### `AsyncTagPayload`
+
+Payload хранится в трёх вариантах:
+
+- `KvStore(store)` — на метке корректный payload текущего приложения
+- `Empty` — метка есть, но NDEF payload не найден
+- `ReadError(text)` — транспорт жив, UID прочитан, но содержимое не удалось разобрать или прочитать
+
 ### `nfc_tag::esp_idf`
 
 Вспомогательный слой для проектов на `esp-idf-svc`.
@@ -197,9 +254,11 @@ High-level обёртка над `Pn532`.
 
 - `esp_idf::StdTimer`
 - `esp_idf::EspNfcTag`
+- `esp_idf::AsyncEspNfcTag`
 - `esp_idf::new_with_driver(i2c_driver)`
 - `esp_idf::new(i2c, sda, scl, baudrate)`
 - `esp_idf::new_default(i2c, sda, scl)`
+- `esp_idf::new_async_default(i2c, sda, scl, worker_config)`
 
 ## Типичный сценарий использования
 

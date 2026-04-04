@@ -1,24 +1,25 @@
 use crate::errors::AppError;
 use crate::hardware::AtomicMachineHardware;
 use crate::storage::{ActiveSessionRecord, AppStorage};
-use common::drivers::nfc_tag::{self, NfcError, TagInfo};
+use common::drivers::led_indicator::{LedPattern, LEVEL_MAX};
+use common::drivers::nfc_tag::{self, AsyncObservedTag, AsyncTagPayload, TagInfo};
 use common::utils::atomic_tags::{AtomicTag, BatteryTag, ServiceTag};
 use esp_idf_svc::hal::delay::FreeRtos;
 use log::{info, warn};
 use std::time::{Duration, Instant};
 
 const LOOP_DELAY_MS: u32 = 50;
-const READ_TAG_TIMEOUT: Duration = Duration::from_millis(100);
 const CHARGE_PERSIST_INTERVAL: Duration = Duration::from_secs(60);
 const NO_BAT_SCROLL_STEP: Duration = Duration::from_millis(250);
 const ERROR_SCROLL_STEP: Duration = Duration::from_millis(250);
 const SERVICE_SCROLL_STEP: Duration = Duration::from_millis(150);
-const ACTIVE_COUNTER_COLON_BLINK_INTERVAL: Duration = Duration::from_millis(500);
+const ACTIVE_COUNTDOWN_STEP_PERIOD: Duration = Duration::from_secs(1);
 const SERVICE_FEEDBACK_BLINK_CYCLES: u32 = 3;
-const MIN_SERVICE_BLINK_INTERVAL: Duration = Duration::from_millis(90);
+const RED_ONLY_LEVELS: [u8; 2] = [LEVEL_MAX, 0];
+const GREEN_ONLY_LEVELS: [u8; 2] = [0, LEVEL_MAX];
 
 pub fn run() -> Result<(), AppError> {
-    let mut hw = AtomicMachineHardware::take()?;
+    let hw = AtomicMachineHardware::take()?;
     let storage = AppStorage::take()?;
 
     let mut consumption_per_sec = storage.load_consumption_per_sec()?;
@@ -30,6 +31,7 @@ pub fn run() -> Result<(), AppError> {
     let mut last_seen_tag_uid_hex: Option<String> = None;
     let mut hot_plug_guard_armed = false;
     let mut display_state = DisplayState::Clear;
+    let mut indicator_state: Option<IndicatorState> = None;
     let mut feedback: Option<ServiceFeedback> = None;
 
     loop {
@@ -45,43 +47,27 @@ pub fn run() -> Result<(), AppError> {
             info!("Switch disabled");
         }
 
-        let mut detected = read_atomic_tag(&mut hw.nfc);
-        let current_tag_uid_hex = detected.as_ref().map(|tag| encode_uid_hex(&tag.info.uid));
+        let snapshot = hw.nfc.snapshot()?;
+        let current_tag_uid_hex = snapshot
+            .tag
+            .as_ref()
+            .map(|tag| encode_uid_hex(&tag.info.uid));
         let tag_changed = current_tag_uid_hex != last_seen_tag_uid_hex;
+        let mut detected = decode_detected_tag(snapshot.tag.as_ref());
 
         if tag_changed {
-            match detected.as_ref() {
-                Some(DetectedTag {
-                    info,
-                    tag: AtomicTag::Battery(battery),
-                }) => info!(
-                    "Detected battery tag uid={} healthy={} dirty={} charge={}/{} session_id={}",
-                    encode_uid_hex(&info.uid),
-                    battery.healthy,
-                    battery.dirty,
-                    battery.charge,
-                    battery.capacity,
-                    battery.session_id
-                ),
-                Some(DetectedTag {
-                    info,
-                    tag: AtomicTag::Service(service),
-                }) => info!(
-                    "Detected service tag uid={} consumption_per_sec={}",
-                    encode_uid_hex(&info.uid),
-                    service.consumption_per_sec
-                ),
-                None => {
-                    if last_seen_tag_uid_hex.is_some() {
-                        info!("Tag removed from reader");
-                    }
-                }
-            }
+            log_tag_change(
+                snapshot.tag.as_ref(),
+                detected.as_ref(),
+                last_seen_tag_uid_hex.is_some(),
+            );
         }
 
         if let Some(session) = active_session.as_ref() {
-            let active_battery_present = battery_view_from_detected(detected.as_ref())
-                .map(|(info, _)| info.uid == session.battery_uid)
+            let active_battery_present = snapshot
+                .tag
+                .as_ref()
+                .map(|tag| tag.info.uid == session.battery_uid)
                 .unwrap_or(false);
 
             if !active_battery_present {
@@ -101,11 +87,16 @@ pub fn run() -> Result<(), AppError> {
                     update_active_session_charge(session, consumption_per_sec, now);
 
                     if now.duration_since(session.last_persist_at) >= CHARGE_PERSIST_INTERVAL {
-                        persist_active_battery(&mut hw.nfc, session)?;
+                        persist_active_battery(&hw.nfc, session)?;
                     }
 
                     if session.battery.charge == 0 {
-                        close_session_cleanly(&storage, &mut hw.nfc, &mut session.battery)?;
+                        close_session_cleanly(
+                            &storage,
+                            &hw.nfc,
+                            &session.battery_uid,
+                            &mut session.battery,
+                        )?;
                         active_session = None;
                         pending_resume = None;
                         runtime_fault_session = None;
@@ -122,7 +113,6 @@ pub fn run() -> Result<(), AppError> {
                         || battery.session_id != session.battery.session_id
                         || battery.charge != session.battery.charge
                     {
-                        // Keep the in-memory state authoritative while session is active.
                         if let Some(DetectedTag {
                             tag: AtomicTag::Battery(current_battery),
                             ..
@@ -167,7 +157,7 @@ pub fn run() -> Result<(), AppError> {
                             "Pending session mismatch while switch is enabled, breaking detected battery uid={}",
                             encode_uid_hex(&info.uid)
                         );
-                        break_detected_battery(&mut hw.nfc, battery, info)?;
+                        break_detected_battery(&hw.nfc, battery, info)?;
                         storage.clear_active_session()?;
                         pending_resume = None;
                         runtime_fault_session = None;
@@ -185,7 +175,6 @@ pub fn run() -> Result<(), AppError> {
                 if tag_changed {
                     apply_service_tag(
                         &storage,
-                        &mut hw,
                         &mut feedback,
                         &mut consumption_per_sec,
                         service,
@@ -216,7 +205,7 @@ pub fn run() -> Result<(), AppError> {
                         "Dirty battery inserted outside resumable session uid={}",
                         encode_uid_hex(&info.uid)
                     );
-                    break_detected_battery(&mut hw.nfc, battery, info)?;
+                    break_detected_battery(&hw.nfc, battery, info)?;
                     if pending_resume.is_some() || runtime_fault_session.is_some() {
                         storage.clear_active_session()?;
                         pending_resume = None;
@@ -231,7 +220,7 @@ pub fn run() -> Result<(), AppError> {
                         "Battery inserted while switch is already enabled uid={}",
                         encode_uid_hex(&info.uid)
                     );
-                    break_detected_battery(&mut hw.nfc, battery, info)?;
+                    break_detected_battery(&hw.nfc, battery, info)?;
                     if pending_resume.is_some() || runtime_fault_session.is_some() {
                         storage.clear_active_session()?;
                         pending_resume = None;
@@ -275,7 +264,7 @@ pub fn run() -> Result<(), AppError> {
                 if battery.is_usable() {
                     let session_id = storage.next_session_id()?;
                     battery.open_session(session_id);
-                    write_battery(&mut hw.nfc, battery)?;
+                    write_battery(&hw.nfc, &info.uid, battery)?;
 
                     let battery_uid_hex = encode_uid_hex(&info.uid);
                     storage.save_active_session(&battery_uid_hex, session_id)?;
@@ -305,7 +294,7 @@ pub fn run() -> Result<(), AppError> {
                 {
                     if info.uid == session.battery_uid {
                         let mut battery_to_close = session.battery.clone();
-                        close_session_cleanly(&storage, &mut hw.nfc, &mut battery_to_close)?;
+                        close_session_cleanly(&storage, &hw.nfc, &info.uid, &mut battery_to_close)?;
                         let remaining_charge = battery_to_close.charge;
                         let capacity = battery_to_close.capacity;
                         *battery = battery_to_close;
@@ -334,16 +323,18 @@ pub fn run() -> Result<(), AppError> {
             }
         }
 
-        apply_led_state(
-            &mut hw,
-            now,
+        let desired_indicator = resolve_indicator_state(
             feedback.as_ref(),
             active_session.as_ref(),
             detected.as_ref(),
             switch_enabled_local,
             pending_resume.as_ref(),
             runtime_fault_session.is_none(),
-        )?;
+        );
+        if indicator_state.as_ref() != Some(&desired_indicator) {
+            apply_indicator_state(&hw, &desired_indicator)?;
+            indicator_state = Some(desired_indicator);
+        }
 
         let desired_display = if let Some(active_feedback) = feedback.as_ref() {
             DisplayState::ServiceMessage(active_feedback.message.clone())
@@ -404,52 +395,103 @@ impl ActiveBatterySession {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum DisplayState {
     Clear,
-    Counter {
-        minutes: u8,
-        seconds: u8,
-        blink_colon: bool,
-    },
+    StaticCounter { minutes: u8, seconds: u8 },
+    ActiveCountdown { total_seconds: u32 },
     NoBattery,
     Error,
     ServiceMessage(String),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum IndicatorState {
+    Red,
+    Green,
+    ServiceFeedback { interval: Duration, cycles: u32 },
+}
+
 #[derive(Clone, Debug)]
 struct ServiceFeedback {
     message: String,
-    started_at: Instant,
     ends_at: Instant,
     blink_interval: Duration,
 }
 
-fn read_atomic_tag(nfc: &mut nfc_tag::esp_idf::EspNfcTag<'_>) -> Option<DetectedTag> {
-    match nfc.poll_tag(READ_TAG_TIMEOUT) {
-        Ok(Some(info)) => match nfc.read_kv_store() {
-            Ok(store) => match AtomicTag::from_store(&store) {
-                Ok(tag) => Some(DetectedTag { info, tag }),
-                Err(err) => {
-                    warn!("Ignoring unsupported/invalid NFC payload: {err}");
-                    None
-                }
-            },
-            Err(NfcError::NoNdefMessage) => None,
-            Err(NfcError::InvalidResponse("ntag_read returned fewer than 17 bytes")) => None,
-            Err(err) => {
-                warn!("Failed to read NFC store: {err}");
-                None
+fn decode_detected_tag(observed: Option<&AsyncObservedTag>) -> Option<DetectedTag> {
+    let observed = observed?;
+    let store = match &observed.payload {
+        AsyncTagPayload::KvStore(store) => store,
+        AsyncTagPayload::Empty | AsyncTagPayload::ReadError(_) => return None,
+    };
+
+    match AtomicTag::from_store(store) {
+        Ok(tag) => Some(DetectedTag {
+            info: observed.info.clone(),
+            tag,
+        }),
+        Err(_) => None,
+    }
+}
+
+fn log_tag_change(
+    observed: Option<&AsyncObservedTag>,
+    detected: Option<&DetectedTag>,
+    had_previous_tag: bool,
+) {
+    match (observed, detected) {
+        (
+            Some(_),
+            Some(DetectedTag {
+                info,
+                tag: AtomicTag::Battery(battery),
+            }),
+        ) => info!(
+            "Detected battery tag uid={} healthy={} dirty={} charge={}/{} session_id={}",
+            encode_uid_hex(&info.uid),
+            battery.healthy,
+            battery.dirty,
+            battery.charge,
+            battery.capacity,
+            battery.session_id
+        ),
+        (
+            Some(_),
+            Some(DetectedTag {
+                info,
+                tag: AtomicTag::Service(service),
+            }),
+        ) => info!(
+            "Detected service tag uid={} consumption_per_sec={}",
+            encode_uid_hex(&info.uid),
+            service.consumption_per_sec
+        ),
+        (Some(observed), None) => match &observed.payload {
+            AsyncTagPayload::Empty => {
+                info!(
+                    "Detected NFC tag uid={} without NDEF payload",
+                    encode_uid_hex(&observed.info.uid)
+                );
+            }
+            AsyncTagPayload::ReadError(err) => {
+                warn!(
+                    "Detected NFC tag uid={} but failed to read payload: {}",
+                    encode_uid_hex(&observed.info.uid),
+                    err
+                );
+            }
+            AsyncTagPayload::KvStore(_) => {
+                warn!(
+                    "Detected NFC tag uid={} with unsupported application payload",
+                    encode_uid_hex(&observed.info.uid)
+                );
             }
         },
-        Ok(None) => None,
-        Err(err) => {
-            warn!("Failed to poll NFC tag: {err}");
-            None
-        }
+        (None, _) if had_previous_tag => info!("Tag removed from reader"),
+        (None, _) => {}
     }
 }
 
 fn apply_service_tag(
     storage: &AppStorage,
-    hw: &mut AtomicMachineHardware<'_>,
     feedback: &mut Option<ServiceFeedback>,
     consumption_per_sec: &mut u32,
     service: &ServiceTag,
@@ -459,15 +501,11 @@ fn apply_service_tag(
     storage.save_consumption_per_sec(service.consumption_per_sec)?;
 
     let message = service.consumption_per_sec.to_string();
-    hw.display
-        .start_scroll_text(&message, SERVICE_SCROLL_STEP)?;
-
     let duration = single_scroll_duration(&message, SERVICE_SCROLL_STEP);
     let blink_interval = feedback_blink_interval(duration);
 
     *feedback = Some(ServiceFeedback {
         message,
-        started_at: now,
         ends_at: now + duration,
         blink_interval,
     });
@@ -501,10 +539,10 @@ fn update_active_session_charge(
 }
 
 fn persist_active_battery(
-    nfc: &mut nfc_tag::esp_idf::EspNfcTag<'_>,
+    nfc: &nfc_tag::esp_idf::AsyncEspNfcTag<'_>,
     session: &mut ActiveBatterySession,
 ) -> Result<(), AppError> {
-    write_battery(nfc, &session.battery)?;
+    write_battery(nfc, &session.battery_uid, &session.battery)?;
     session.last_persist_at = Instant::now();
     info!(
         "Persisted active battery charge uid={} charge={}/{} session_id={}",
@@ -518,35 +556,37 @@ fn persist_active_battery(
 
 fn close_session_cleanly(
     storage: &AppStorage,
-    nfc: &mut nfc_tag::esp_idf::EspNfcTag<'_>,
+    nfc: &nfc_tag::esp_idf::AsyncEspNfcTag<'_>,
+    battery_uid: &[u8],
     battery: &mut BatteryTag,
 ) -> Result<(), AppError> {
     battery.close_session();
-    write_battery(nfc, battery)?;
+    write_battery(nfc, battery_uid, battery)?;
     storage.clear_active_session()?;
     Ok(())
 }
 
 fn break_detected_battery(
-    nfc: &mut nfc_tag::esp_idf::EspNfcTag<'_>,
+    nfc: &nfc_tag::esp_idf::AsyncEspNfcTag<'_>,
     battery: &mut BatteryTag,
     info: &TagInfo,
 ) -> Result<(), AppError> {
     if battery.healthy {
         warn!("Breaking battery {:02X?}", info.uid);
         battery.mark_broken();
-        write_battery(nfc, battery)?;
+        write_battery(nfc, &info.uid, battery)?;
     }
 
     Ok(())
 }
 
 fn write_battery(
-    nfc: &mut nfc_tag::esp_idf::EspNfcTag<'_>,
+    nfc: &nfc_tag::esp_idf::AsyncEspNfcTag<'_>,
+    battery_uid: &[u8],
     battery: &BatteryTag,
 ) -> Result<(), AppError> {
     let store = battery.to_store()?;
-    nfc.write_kv_store(&store)?;
+    nfc.write_kv_store_for_tag(battery_uid, &store)?;
     Ok(())
 }
 
@@ -568,11 +608,8 @@ fn resolve_display_state(
     can_resume_pending_session: bool,
 ) -> DisplayState {
     if let Some(session) = active_session {
-        let (minutes, seconds) = remaining_time_mmss(&session.battery, consumption_per_sec);
-        return DisplayState::Counter {
-            minutes,
-            seconds,
-            blink_colon: switch_enabled && session.battery.healthy && session.battery.charge > 0,
+        return DisplayState::ActiveCountdown {
+            total_seconds: countdown_total_seconds(&session.battery, consumption_per_sec),
         };
     }
 
@@ -592,11 +629,7 @@ fn resolve_display_state(
         }
 
         let (minutes, seconds) = remaining_time_mmss(battery, consumption_per_sec);
-        return DisplayState::Counter {
-            minutes,
-            seconds,
-            blink_colon: false,
-        };
+        return DisplayState::StaticCounter { minutes, seconds };
     }
 
     if switch_enabled {
@@ -615,18 +648,18 @@ fn apply_display_state(
             hw.display.stop_colon_blink(false)?;
             hw.display.clear()?;
         }
-        DisplayState::Counter {
-            minutes,
-            seconds,
-            blink_colon,
-        } => {
+        DisplayState::StaticCounter { minutes, seconds } => {
             hw.display.show_int_pair(*minutes, *seconds)?;
-            if *blink_colon {
-                hw.display
-                    .start_colon_blink(true, ACTIVE_COUNTER_COLON_BLINK_INTERVAL)?;
-            } else {
-                hw.display.stop_colon_blink(true)?;
-            }
+            hw.display.stop_colon_blink(true)?;
+        }
+        DisplayState::ActiveCountdown { total_seconds } => {
+            hw.display
+                .start_countdown(*total_seconds, ACTIVE_COUNTDOWN_STEP_PERIOD)?;
+            hw.display.start_colon_pulse(
+                true,
+                ACTIVE_COUNTDOWN_STEP_PERIOD,
+                Duration::from_millis((ACTIVE_COUNTDOWN_STEP_PERIOD.as_millis() / 2).max(1) as u64),
+            )?;
         }
         DisplayState::NoBattery => {
             hw.display.stop_colon_blink(false)?;
@@ -638,49 +671,34 @@ fn apply_display_state(
         }
         DisplayState::ServiceMessage(message) => {
             hw.display.stop_colon_blink(false)?;
-            hw.display.start_scroll_text(message, SERVICE_SCROLL_STEP)?;
+            hw.display
+                .start_scroll_text_cycles(message, SERVICE_SCROLL_STEP, Some(1))?;
         }
     }
 
     Ok(())
 }
 
-fn apply_led_state(
-    hw: &mut AtomicMachineHardware<'_>,
-    now: Instant,
+fn resolve_indicator_state(
     feedback: Option<&ServiceFeedback>,
     active_session: Option<&ActiveBatterySession>,
     detected: Option<&DetectedTag>,
     switch_enabled: bool,
     pending_resume: Option<&ActiveSessionRecord>,
     can_resume_pending_session: bool,
-) -> Result<(), AppError> {
+) -> IndicatorState {
     if let Some(active_feedback) = feedback {
-        let elapsed = now.duration_since(active_feedback.started_at).as_millis();
-        let interval_ms = active_feedback.blink_interval.as_millis().max(1);
-        let phase = (elapsed / interval_ms) % 2 == 0;
-
-        if phase {
-            hw.red_led.set_high()?;
-            hw.green_led.set_low()?;
-        } else {
-            hw.red_led.set_low()?;
-            hw.green_led.set_high()?;
-        }
-
-        return Ok(());
+        return IndicatorState::ServiceFeedback {
+            interval: active_feedback.blink_interval,
+            cycles: SERVICE_FEEDBACK_BLINK_CYCLES,
+        };
     }
 
     if let Some(session) = active_session {
         if switch_enabled && session.battery.healthy && session.battery.charge > 0 {
-            hw.red_led.set_low()?;
-            hw.green_led.set_high()?;
-        } else {
-            hw.red_led.set_high()?;
-            hw.green_led.set_low()?;
+            return IndicatorState::Green;
         }
-
-        return Ok(());
+        return IndicatorState::Red;
     }
 
     if let Some(DetectedTag {
@@ -695,24 +713,34 @@ fn apply_led_state(
             .unwrap_or(false);
 
         if !battery.healthy || (battery.dirty && !resumed_battery) {
-            hw.red_led.set_high()?;
-            hw.green_led.set_low()?;
-            return Ok(());
+            return IndicatorState::Red;
         }
 
         if switch_enabled && battery.charge > 0 {
-            hw.red_led.set_low()?;
-            hw.green_led.set_high()?;
+            IndicatorState::Green
         } else {
-            hw.red_led.set_high()?;
-            hw.green_led.set_low()?;
+            IndicatorState::Red
         }
+    } else {
+        IndicatorState::Red
+    }
+}
 
-        return Ok(());
+fn apply_indicator_state(
+    hw: &AtomicMachineHardware<'_>,
+    indicator_state: &IndicatorState,
+) -> Result<(), AppError> {
+    match indicator_state {
+        IndicatorState::Red => hw.indicator.set_levels(RED_ONLY_LEVELS)?,
+        IndicatorState::Green => hw.indicator.set_levels(GREEN_ONLY_LEVELS)?,
+        IndicatorState::ServiceFeedback { interval, cycles } => {
+            let pattern =
+                LedPattern::alternate(RED_ONLY_LEVELS, GREEN_ONLY_LEVELS, *interval, *cycles)
+                    .final_levels(RED_ONLY_LEVELS);
+            hw.indicator.play_pattern(pattern)?;
+        }
     }
 
-    hw.red_led.set_high()?;
-    hw.green_led.set_low()?;
     Ok(())
 }
 
@@ -741,10 +769,14 @@ fn single_scroll_duration(message: &str, step_delay: Duration) -> Duration {
 
 fn feedback_blink_interval(duration: Duration) -> Duration {
     let phase_count = u128::from(SERVICE_FEEDBACK_BLINK_CYCLES.saturating_mul(2));
-    let interval_ms = (duration.as_millis() / phase_count)
-        .max(MIN_SERVICE_BLINK_INTERVAL.as_millis())
-        .min(u128::from(u32::MAX));
+    let interval_ms = (duration.as_millis() / phase_count).max(1);
     Duration::from_millis(interval_ms as u64)
+}
+
+fn countdown_total_seconds(battery: &BatteryTag, consumption_per_sec: u32) -> u32 {
+    battery
+        .remaining_seconds(consumption_per_sec)
+        .min((99 * 60 + 59) as u64) as u32
 }
 
 fn matches_active_session_record(

@@ -23,6 +23,9 @@
 - Поддержка короткого ASCII-текста
 - Поддержка бегущей строки
 - Отдельное управление двоеточием
+- Автономный countdown в фоне
+- Ограничение числа полных циклов бегущей строки
+- Импульсный режим двоеточия, синхронный с шагом countdown
 
 ## Важное ограничение по железу
 
@@ -130,6 +133,12 @@ pub struct AsyncDisplayConfig {
 - новая команда заменяет старую
 - например, `start_scroll_text(...)` крутится до следующего `show_*` или нового `start_scroll_text(...)`
 
+Дополнительные async-возможности:
+
+- `start_countdown(initial_total_seconds, step_period)`
+- `start_scroll_text_cycles(text, step_delay, cycles)`
+- `start_colon_pulse(initial_on, period, on_duration)`
+
 ## Пример: sync API
 
 ```rust
@@ -167,6 +176,23 @@ display.start_colon_blink(true, Duration::from_millis(500))?;
 display.start_scroll_text("no bat", Duration::from_millis(250))?;
 display.show_text("AbCd", Align::Left)?;
 ```
+
+### Пример: автономный countdown
+
+```rust
+display.start_countdown(5 * 60 + 18, Duration::from_secs(1))?;
+display.start_colon_pulse(
+    true,
+    Duration::from_secs(1),
+    Duration::from_millis(500),
+)?;
+```
+
+В этом режиме:
+
+- worker сам уменьшает время
+- основной код не обязан каждую секунду заново писать `MM:SS`
+- двоеточие может жить в том же ритме, что и countdown
 
 ## Вывод целого числа
 
@@ -228,6 +254,11 @@ display.toggle_colon()?;
 display.set_colon(true)?;
 display.start_colon_blink(true, Duration::from_millis(500))?;
 display.stop_colon_blink(false)?;
+display.start_colon_pulse(
+    true,
+    Duration::from_secs(1),
+    Duration::from_millis(500),
+)?;
 ```
 
 Что важно:
@@ -247,6 +278,16 @@ display.show_text("AbCd", Align::Left)?;
 - поддерживается только ASCII
 - текст длиннее 4 символов при статическом выводе обрежется
 - для длинного текста нужна бегущая строка
+
+Если нужен ровно один проход строки, а не бесконечная прокрутка:
+
+```rust
+display.start_scroll_text_cycles(
+    "1500",
+    Duration::from_millis(150),
+    Some(1),
+)?;
+```
 
 ## `ERROR`
 
