@@ -219,7 +219,7 @@ src/
 - `src/bin/battery_tag_demo` — запись и проверка базовой структуры battery-tag
 - `src/bin/service_tag_demo` — запись и проверка базовой структуры service-tag
 - `src/bin/display_demo` — изолированный demo-таргет для TM1637
-- `src/bin/led_indicator_demo` — демонстрация digital/PWM LED-паттернов
+- `src/bin/led_indicator_demo` — демонстрация digital backend для on-board LED и PWM backend для внешних LED
 
 ## Полезные файлы
 

@@ -6,7 +6,7 @@
 
 - backend применяет уровни к физическим каналам
 - pattern описывает шаги, переходы и повторения
-- controller исполняет желаемый режим в фоне
+- async controller исполняет желаемый режим в фоне
 
 Модель уровней единая для всех backend'ов:
 
@@ -127,7 +127,7 @@ PWM backend для LEDC.
 - массив уже созданных `LedcDriver`
 - массив полярностей каналов
 
-## Как работает controller
+## Как работает async controller
 
 `AsyncLedController` хранит желаемый режим и выполняет его в фоне:
 
@@ -188,6 +188,32 @@ let indicator = AsyncLedController::<2>::new(group, AsyncLedConfig::default())?;
 ```
 
 PWM backend использует все уровни `0..=255` и поэтому поддерживает плавные переходы и пульсации не только на уровне модели, но и на железе.
+
+## Demo bin
+
+Проект содержит отдельный demo-бинарник [src/bin/led_indicator_demo/main.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/bin/led_indicator_demo/main.rs).
+
+Он показывает два независимых controller'а одновременно:
+
+- on-board LED на `GPIO8` через `DigitalLedGroup` с `LedPolarity::ActiveLow`
+- внешний красный и зелёный LED на `GPIO0` и `GPIO1` через `PwmLedGroup`
+
+Внутри одного цикла demo показывает:
+
+- статические уровни `red`, `green`, `both`, `half brightness`
+- простое мигание
+- попеременное переключение `red/green`
+- пульсацию сразу двух PWM-каналов
+- плавный crossfade между `red` и `green`
+- разницу между `transition_linear(...)` и easing-кривыми
+- `Custom(fn(f32) -> f32)` на финальной сцене
+- параллельную работу digital backend и PWM backend
+
+Запуск:
+
+```bash
+cargo espflash flash --bin led_indicator_demo --monitor
+```
 
 ## Примеры паттернов
 
