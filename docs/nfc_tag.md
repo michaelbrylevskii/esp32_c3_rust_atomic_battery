@@ -126,7 +126,8 @@ pub struct NfcInitConfig {
 
 - `AsyncNfcTag::new(nfc, config)`
 - `snapshot()`
-- `write_kv_store_for_tag(expected_uid, store)`
+- `enqueue_write_kv_store_for_tag(expected_uid, store)`
+- `drain_events()`
 - `last_worker_error()`
 
 Схема работы:
@@ -134,7 +135,8 @@ pub struct NfcInitConfig {
 - worker сам опрашивает `PN532`
 - worker кэширует последнюю увиденную метку
 - main loop читает только `snapshot()`
-- запись идёт отдельной командой в тот же worker
+- запись ставится в очередь команд
+- завершение записи возвращается отдельным событием через `drain_events()`
 
 ### `AsyncNfcConfig`
 
@@ -192,6 +194,18 @@ Payload хранится в трёх вариантах:
 - `KvStore(store)` — на метке корректный payload текущего приложения
 - `Empty` — метка есть, но NDEF payload не найден
 - `ReadError(text)` — UID прочитан, но содержимое не удалось прочитать или разобрать
+
+### `AsyncNfcEvent`
+
+События async worker:
+
+- `WriteFinished { expected_uid, store, result }`
+
+Обычный сценарий такой:
+
+- код ставит запись в очередь через `enqueue_write_kv_store_for_tag(...)`
+- worker выполняет запись
+- основной цикл забирает результат из `drain_events()`
 
 ### `nfc_tag::esp_idf`
 
@@ -273,6 +287,37 @@ let async_nfc = AsyncNfcTag::new(sync_nfc, AsyncNfcConfig::default())?;
 let snapshot = async_nfc.snapshot()?;
 if let Some(tag) = snapshot.tag {
     info!("UID = {:02X?}", tag.info.uid);
+}
+```
+
+### Async запись с очередью команд
+
+```rust
+use common::drivers::nfc_tag::async_nfc::{AsyncNfcConfig, AsyncNfcEvent, AsyncNfcTag};
+use common::utils::kv_store::KvStore;
+
+let mut sync_nfc = common::drivers::nfc_tag::esp_idf::new_default(
+    p.i2c0,
+    p.pins.gpio3,
+    p.pins.gpio4,
+)?;
+sync_nfc.init_default()?;
+
+let async_nfc = AsyncNfcTag::new(sync_nfc, AsyncNfcConfig::default())?;
+let snapshot = async_nfc.snapshot()?;
+
+if let Some(tag) = snapshot.tag.as_ref() {
+    let mut store = KvStore::new();
+    store.insert_string("name", "ESP32-C3")?;
+    async_nfc.enqueue_write_kv_store_for_tag(&tag.info.uid, &store)?;
+}
+
+for event in async_nfc.drain_events()? {
+    match event {
+        AsyncNfcEvent::WriteFinished { expected_uid, result, .. } => {
+            info!("write for {:02X?}: {:?}", expected_uid, result);
+        }
+    }
 }
 ```
 

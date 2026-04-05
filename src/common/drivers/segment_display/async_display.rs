@@ -12,10 +12,6 @@ use tm1637_embedded_hal::Brightness;
 #[derive(Clone)]
 pub(super) enum BufferedContent {
     Static([u8; DISPLAY_WIDTH]),
-    Countdown {
-        initial_total_seconds: u32,
-        step_period: Duration,
-    },
     Scroll {
         source: Vec<u8>,
         step_delay: Duration,
@@ -194,24 +190,6 @@ impl AsyncSegmentDisplay4 {
     /// Показывает пару целых чисел в виде `NN:NN`.
     pub fn show_int_pair(&self, left: u8, right: u8) -> Result<(), AsyncDisplayError> {
         self.update_content(BufferedContent::Static(format_int_pair_frame(left, right)?))
-    }
-
-    /// Показывает автономный countdown в формате `MM:SS`.
-    ///
-    /// Значение пересчитывается фоновой задачей без участия основного цикла.
-    pub fn start_countdown(
-        &self,
-        initial_total_seconds: u32,
-        step_period: Duration,
-    ) -> Result<(), AsyncDisplayError> {
-        if step_period.is_zero() {
-            return Err(AsyncDisplayError::InvalidAnimationDelay);
-        }
-
-        self.update_content(BufferedContent::Countdown {
-            initial_total_seconds,
-            step_period,
-        })
     }
 
     /// Показывает короткий ASCII-текст, обрезая его до четырёх символов.

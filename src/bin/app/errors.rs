@@ -1,3 +1,4 @@
+use crate::storage::{AsyncStorageError, StorageError};
 use common::drivers::led_indicator::async_controller::AsyncLedError;
 use common::drivers::nfc_tag::async_nfc::AsyncNfcError;
 use common::drivers::nfc_tag::sync_nfc::NfcError;
@@ -17,6 +18,8 @@ pub enum AppError {
     Display(DisplayError),
     AsyncDisplay(AsyncDisplayError),
     AsyncLed(AsyncLedError),
+    Storage(StorageError),
+    AsyncStorage(AsyncStorageError),
     Tag(AtomicTagError),
 }
 
@@ -68,6 +71,18 @@ impl From<AsyncLedError> for AppError {
     }
 }
 
+impl From<StorageError> for AppError {
+    fn from(value: StorageError) -> Self {
+        Self::Storage(value)
+    }
+}
+
+impl From<AsyncStorageError> for AppError {
+    fn from(value: AsyncStorageError) -> Self {
+        Self::AsyncStorage(value)
+    }
+}
+
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -78,6 +93,8 @@ impl fmt::Display for AppError {
             AppError::Display(err) => write!(f, "display error: {err}"),
             AppError::AsyncDisplay(err) => write!(f, "async display error: {err}"),
             AppError::AsyncLed(err) => write!(f, "async led error: {err}"),
+            AppError::Storage(err) => write!(f, "storage error: {err}"),
+            AppError::AsyncStorage(err) => write!(f, "async storage error: {err}"),
             AppError::Tag(err) => write!(f, "tag error: {err}"),
         }
     }

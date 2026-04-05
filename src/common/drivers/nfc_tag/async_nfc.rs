@@ -9,6 +9,7 @@ use crate::utils::kv_store::KvStore;
 use core::fmt::{self, Debug};
 use core::time::Duration;
 use pn532::{CountDown, Interface};
+use std::collections::VecDeque;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
@@ -59,6 +60,16 @@ pub struct AsyncNfcSnapshot {
     pub tag: Option<AsyncObservedTag>,
 }
 
+/// Событие завершения фоновой NFC-команды.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AsyncNfcEvent {
+    WriteFinished {
+        expected_uid: Vec<u8>,
+        store: KvStore,
+        result: Result<(), String>,
+    },
+}
+
 /// Ошибки async NFC worker.
 #[derive(Debug)]
 pub enum AsyncNfcError {
@@ -88,6 +99,7 @@ impl std::error::Error for AsyncNfcError {}
 #[derive(Clone)]
 struct AsyncNfcState {
     snapshot: AsyncNfcSnapshot,
+    events: VecDeque<AsyncNfcEvent>,
     shutdown: bool,
 }
 
@@ -98,6 +110,7 @@ impl AsyncNfcState {
                 generation: 0,
                 tag: None,
             },
+            events: VecDeque::new(),
             shutdown: false,
         }
     }
@@ -107,7 +120,6 @@ enum AsyncNfcCommand {
     WriteKvStore {
         expected_uid: Vec<u8>,
         store: KvStore,
-        reply: mpsc::Sender<Result<(), String>>,
     },
 }
 
@@ -191,27 +203,32 @@ where
         Ok(guard.snapshot.clone())
     }
 
-    /// Записывает `KvStore` только если на ридере всё ещё та же самая метка.
-    pub fn write_kv_store_for_tag(
+    /// Ставит в очередь запись `KvStore`, если на ридере всё ещё ожидается та же метка.
+    pub fn enqueue_write_kv_store_for_tag(
         &self,
         expected_uid: &[u8],
         store: &KvStore,
     ) -> Result<(), AsyncNfcError> {
         self.ensure_worker_alive()?;
 
-        let (reply_tx, reply_rx) = mpsc::channel();
         self.command_tx
             .send(AsyncNfcCommand::WriteKvStore {
                 expected_uid: expected_uid.to_vec(),
                 store: store.clone(),
-                reply: reply_tx,
             })
-            .map_err(|_| AsyncNfcError::WorkerStopped)?;
+            .map_err(|_| AsyncNfcError::WorkerStopped)
+    }
 
-        reply_rx
-            .recv()
-            .map_err(|_| AsyncNfcError::WorkerStopped)?
-            .map_err(AsyncNfcError::CommandFailed)
+    /// Возвращает и очищает накопившиеся события worker'а.
+    pub fn drain_events(&self) -> Result<Vec<AsyncNfcEvent>, AsyncNfcError> {
+        self.ensure_worker_alive()?;
+
+        let mut guard = self
+            .state
+            .lock()
+            .map_err(|_| AsyncNfcError::WorkerFailed("NFC state mutex poisoned".into()))?;
+
+        Ok(guard.events.drain(..).collect())
     }
 
     /// Возвращает последнюю фатальную ошибку worker'а, если она была.
@@ -380,7 +397,6 @@ where
         AsyncNfcCommand::WriteKvStore {
             expected_uid,
             store,
-            reply,
         } => {
             let current_uid = state
                 .lock()
@@ -400,13 +416,29 @@ where
                                 tag.payload = AsyncTagPayload::KvStore(store.clone());
                             }
                             guard.snapshot.generation = guard.snapshot.generation.wrapping_add(1);
+                            guard.events.push_back(AsyncNfcEvent::WriteFinished {
+                                expected_uid: expected_uid.clone(),
+                                store: store.clone(),
+                                result: Ok(()),
+                            });
                         }
                     }),
                 Some(_) => Err("expected NFC tag is no longer present on the reader".to_owned()),
                 None => Err("no NFC tag is currently present on the reader".to_owned()),
             };
 
-            let _ = reply.send(result.map(|()| ()));
+            if let Err(error) = result {
+                state
+                    .lock()
+                    .map_err(|_| "NFC state mutex poisoned".to_owned())?
+                    .events
+                    .push_back(AsyncNfcEvent::WriteFinished {
+                        expected_uid,
+                        store,
+                        result: Err(error),
+                    });
+            }
+
             Ok(())
         }
     }

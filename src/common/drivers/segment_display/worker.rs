@@ -1,6 +1,6 @@
 use super::async_display::{BufferedColonMode, BufferedContent, BufferedState};
 use super::constants::DISPLAY_WIDTH;
-use super::frame::{apply_colon, countdown_frame, scroll_window_frame};
+use super::frame::{apply_colon, scroll_window_frame};
 use super::sync_display::SegmentDisplay4;
 use core::time::Duration;
 use std::sync::{Arc, Mutex};
@@ -86,15 +86,6 @@ fn frame_from_content(
 ) -> [u8; DISPLAY_WIDTH] {
     match content {
         BufferedContent::Static(frame) => *frame,
-        BufferedContent::Countdown {
-            initial_total_seconds,
-            step_period,
-        } => countdown_frame(countdown_remaining_seconds(
-            *initial_total_seconds,
-            content_started,
-            now,
-            *step_period,
-        )),
         BufferedContent::Scroll {
             source,
             step_delay,
@@ -152,16 +143,6 @@ fn colon_is_on(mode: BufferedColonMode, colon_started: Instant, now: Instant) ->
             }
         }
     }
-}
-
-fn countdown_remaining_seconds(
-    initial_total_seconds: u32,
-    started_at: Instant,
-    now: Instant,
-    step_period: Duration,
-) -> u32 {
-    let elapsed_steps = animation_steps(now, started_at, step_period) as u32;
-    initial_total_seconds.saturating_sub(elapsed_steps)
 }
 
 fn animation_steps(now: Instant, started_at: Instant, step_delay: Duration) -> usize {

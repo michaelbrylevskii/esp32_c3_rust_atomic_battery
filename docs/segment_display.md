@@ -23,9 +23,8 @@
 - Поддержка короткого ASCII-текста
 - Поддержка бегущей строки
 - Отдельное управление двоеточием
-- Автономный countdown в фоне
 - Ограничение числа полных циклов бегущей строки
-- Импульсный режим двоеточия, синхронный с шагом countdown
+- Импульсный режим двоеточия с настраиваемым периодом
 
 ## Важное ограничение по железу
 
@@ -125,7 +124,6 @@ pub struct AsyncDisplayConfig {
 
 Дополнительные async-возможности:
 
-- `start_countdown(initial_total_seconds, step_period)`
 - `start_scroll_text_cycles(text, step_delay, cycles)`
 - `start_colon_pulse(initial_on, period, on_duration)`
 
@@ -167,10 +165,10 @@ display.start_scroll_text("no bat", Duration::from_millis(250))?;
 display.show_text("AbCd", Align::Left)?;
 ```
 
-### Пример: автономный countdown
+### Пример: пара чисел с импульсом двоеточия
 
 ```rust
-display.start_countdown(5 * 60 + 18, Duration::from_secs(1))?;
+display.show_int_pair(5, 18)?;
 display.start_colon_pulse(
     true,
     Duration::from_secs(1),
@@ -178,10 +176,9 @@ display.start_colon_pulse(
 )?;
 ```
 
-- worker сам уменьшает время
-- основной код не обязан каждую секунду заново писать `MM:SS`
-- двоеточие может жить в том же ритме, что и countdown
-- верхняя граница отображения countdown это `99:59`
+- число на дисплей подаёт код приложения
+- worker только обслуживает двоеточие и анимации
+- двоеточие может жить в том же ритме, что и обновление числа в основном коде
 
 ## Вывод целого числа
 

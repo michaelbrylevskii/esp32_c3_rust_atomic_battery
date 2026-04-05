@@ -71,11 +71,6 @@ pub(crate) fn build_scroll_source(text: &str) -> Result<Vec<u8>, DisplayError> {
     Ok(source)
 }
 
-pub(crate) fn countdown_frame(total_seconds: u32) -> [u8; DISPLAY_WIDTH] {
-    let (left, right) = seconds_to_pair(total_seconds);
-    formatters::clock_to_4digits(left, right, false)
-}
-
 pub(crate) fn scroll_window_frame(source: &[u8], offset: usize) -> [u8; DISPLAY_WIDTH] {
     let mut frame = [0u8; DISPLAY_WIDTH];
     for (index, byte) in source[offset..offset + DISPLAY_WIDTH].iter().enumerate() {
@@ -100,11 +95,6 @@ fn text_to_segments(text: &str) -> [u8; DISPLAY_WIDTH] {
     frame
 }
 
-fn seconds_to_pair(total_seconds: u32) -> (u8, u8) {
-    let capped = total_seconds.min((99 * 60 + 59) as u32);
-    ((capped / 60) as u8, (capped % 60) as u8)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,12 +109,6 @@ mod tests {
     fn formats_pair_frame() {
         let frame = format_int_pair_frame(12, 34).unwrap();
         assert_eq!(frame, formatters::clock_to_4digits(12, 34, false));
-    }
-
-    #[test]
-    fn countdown_caps_at_display_limit() {
-        let frame = countdown_frame(12 * 60 * 60);
-        assert_eq!(frame, formatters::clock_to_4digits(99, 59, false));
     }
 
     #[test]

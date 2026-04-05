@@ -194,9 +194,21 @@ src/
     app/
       main.rs
       errors.rs
-      atomic_machine.rs
       hardware.rs
-      storage.rs
+      machine/
+        mod.rs
+        constants.rs
+        effects.rs
+        events.rs
+        model.rs
+        projections.rs
+        reducer.rs
+        runtime.rs
+      storage/
+        mod.rs
+        async_store.rs
+        sync_store.rs
+        types.rs
 
     battery_tag_demo/
       main.rs
@@ -220,9 +232,9 @@ src/
 - `src/common/utils` — общие утилиты и прикладные модели
 - `src/common/utils/kv_store.rs` — общий key-value формат `KV1`
 - `src/bin/app` — основной бинарник приложения
-- `src/bin/app/atomic_machine.rs` — текущий runtime и логика "атомной машины"
+- `src/bin/app/machine` — state machine, события, эффекты и runtime основного приложения
 - `src/bin/app/hardware.rs` — wiring и инициализация железа
-- `src/bin/app/storage.rs` — энергонезависимые настройки и состояние через NVS
+- `src/bin/app/storage` — sync и async доступ к NVS
 - `src/bin/battery_tag_demo` — запись и проверка базовой структуры battery-tag
 - `src/bin/service_tag_demo` — запись и проверка базовой структуры service-tag
 - `src/bin/display_demo` — изолированный demo-таргет для TM1637
