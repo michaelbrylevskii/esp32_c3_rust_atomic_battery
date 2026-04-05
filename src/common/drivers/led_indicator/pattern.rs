@@ -80,13 +80,8 @@ impl<const N: usize> LedPattern<N> {
         self
     }
 
-    /// Добавляет шаг линейного перехода.
-    pub fn transition(self, from: [u8; N], to: [u8; N], duration: Duration) -> Self {
-        self.transition_with_easing(from, to, duration, Easing::Linear)
-    }
-
     /// Добавляет шаг перехода с заданной кривой easing.
-    pub fn transition_with_easing(
+    pub fn transition(
         mut self,
         from: [u8; N],
         to: [u8; N],
@@ -100,6 +95,11 @@ impl<const N: usize> LedPattern<N> {
             easing,
         });
         self
+    }
+
+    /// Добавляет шаг линейного перехода.
+    pub fn transition_linear(self, from: [u8; N], to: [u8; N], duration: Duration) -> Self {
+        self.transition(from, to, duration, Easing::Linear)
     }
 
     /// Возвращает паттерн простого мигания между двумя состояниями.
@@ -136,8 +136,8 @@ impl<const N: usize> LedPattern<N> {
     /// Возвращает паттерн "пульсации" с линейным нарастанием и спадом.
     pub fn pulse(peak_levels: [u8; N], rise: Duration, fall: Duration, cycles: u32) -> Self {
         Self::new()
-            .transition_with_easing([0; N], peak_levels, rise, Easing::EaseInOutSine)
-            .transition_with_easing(peak_levels, [0; N], fall, Easing::EaseInOutSine)
+            .transition([0; N], peak_levels, rise, Easing::EaseInOutSine)
+            .transition(peak_levels, [0; N], fall, Easing::EaseInOutSine)
             .repeat(RepeatMode::Times(cycles.max(1)))
             .final_levels([0; N])
     }
@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn transition_interpolates_linearly() {
         let pattern =
-            LedPattern::<1>::new().transition([0], [LEVEL_MAX], Duration::from_millis(1000));
+            LedPattern::<1>::new().transition_linear([0], [LEVEL_MAX], Duration::from_millis(1000));
 
         assert_eq!(pattern.sample_levels(Duration::from_millis(0)), [0]);
         assert_eq!(pattern.sample_levels(Duration::from_millis(500)), [128]);
@@ -304,7 +304,7 @@ mod tests {
             1.0
         }
 
-        let pattern = LedPattern::<1>::new().transition_with_easing(
+        let pattern = LedPattern::<1>::new().transition(
             [0],
             [LEVEL_MAX],
             Duration::from_millis(1000),

@@ -248,7 +248,7 @@ use std::time::Duration;
 
 let pattern = LedPattern::<2>::new()
     .hold([LEVEL_MAX, 0], Duration::from_millis(120))
-    .transition_with_easing(
+    .transition(
         [LEVEL_MAX, 0],
         [0, LEVEL_MAX],
         Duration::from_millis(600),
@@ -270,7 +270,7 @@ fn snap_to_end(_: f32) -> f32 {
     1.0
 }
 
-let pattern = LedPattern::<1>::new().transition_with_easing(
+let pattern = LedPattern::<1>::new().transition(
     [0],
     [255],
     Duration::from_millis(300),

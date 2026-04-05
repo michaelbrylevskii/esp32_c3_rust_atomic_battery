@@ -130,13 +130,13 @@ fn run() -> Result<(), DemoError> {
 
         indicator.play_pattern(
             LedPattern::<2>::new()
-                .transition_with_easing(
+                .transition(
                     RED_PIN_LEVELS,
                     GREEN_PIN_LEVELS,
                     Duration::from_millis(1200),
                     Easing::EaseInOutSine,
                 )
-                .transition_with_easing(
+                .transition(
                     GREEN_PIN_LEVELS,
                     RED_PIN_LEVELS,
                     Duration::from_millis(1200),
