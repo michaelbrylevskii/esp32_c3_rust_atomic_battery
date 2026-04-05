@@ -1,4 +1,5 @@
-use super::controller::AsyncLedError;
+use super::async_controller::AsyncLedError;
+use super::easing::Easing;
 use core::time::Duration;
 use std::array;
 
@@ -13,15 +14,8 @@ pub enum RepeatMode {
     Forever,
 }
 
-/// Тип интерполяции между двумя наборами уровней.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Easing {
-    /// Линейный переход.
-    Linear,
-}
-
 /// Один шаг LED-паттерна.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LedPatternStep<const N: usize> {
     /// Удерживать заданные уровни указанное время.
     Hold { levels: [u8; N], duration: Duration },
@@ -51,7 +45,7 @@ impl<const N: usize> LedPatternStep<N> {
 }
 
 /// Последовательность LED-шагов, которую выполняет async worker.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LedPattern<const N: usize> {
     steps: Vec<LedPatternStep<N>>,
     repeat: RepeatMode,
@@ -87,12 +81,23 @@ impl<const N: usize> LedPattern<N> {
     }
 
     /// Добавляет шаг линейного перехода.
-    pub fn transition(mut self, from: [u8; N], to: [u8; N], duration: Duration) -> Self {
+    pub fn transition(self, from: [u8; N], to: [u8; N], duration: Duration) -> Self {
+        self.transition_with_easing(from, to, duration, Easing::Linear)
+    }
+
+    /// Добавляет шаг перехода с заданной кривой easing.
+    pub fn transition_with_easing(
+        mut self,
+        from: [u8; N],
+        to: [u8; N],
+        duration: Duration,
+        easing: Easing,
+    ) -> Self {
         self.steps.push(LedPatternStep::Transition {
             from,
             to,
             duration,
-            easing: Easing::Linear,
+            easing,
         });
         self
     }
@@ -131,8 +136,8 @@ impl<const N: usize> LedPattern<N> {
     /// Возвращает паттерн "пульсации" с линейным нарастанием и спадом.
     pub fn pulse(peak_levels: [u8; N], rise: Duration, fall: Duration, cycles: u32) -> Self {
         Self::new()
-            .transition([0; N], peak_levels, rise)
-            .transition(peak_levels, [0; N], fall)
+            .transition_with_easing([0; N], peak_levels, rise, Easing::EaseInOutSine)
+            .transition_with_easing(peak_levels, [0; N], fall, Easing::EaseInOutSine)
             .repeat(RepeatMode::Times(cycles.max(1)))
             .final_levels([0; N])
     }
@@ -248,23 +253,22 @@ fn interpolate_levels<const N: usize>(
         return to;
     }
 
-    match easing {
-        Easing::Linear => array::from_fn(|index| {
-            let from_level = i32::from(from[index]);
-            let to_level = i32::from(to[index]);
-            let delta = to_level - from_level;
-            let progress = elapsed_ms.min(duration_ms) as i128;
-            let value =
-                i128::from(from_level) + (i128::from(delta) * progress) / duration_ms as i128;
-            value.clamp(i128::from(u8::MIN), i128::from(u8::MAX)) as u8
-        }),
-    }
+    let progress = (elapsed_ms.min(duration_ms) as f32) / (duration_ms as f32);
+    let eased = easing.apply(progress);
+
+    array::from_fn(|index| {
+        let from_level = from[index] as f32;
+        let to_level = to[index] as f32;
+        let value = from_level + (to_level - from_level) * eased;
+        value.round().clamp(f32::from(u8::MIN), f32::from(u8::MAX)) as u8
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::drivers::led_indicator::constants::LEVEL_MAX;
+    use crate::drivers::led_indicator::easing::Easing;
 
     #[test]
     fn blink_returns_final_off_levels() {
@@ -287,11 +291,27 @@ mod tests {
             LedPattern::<1>::new().transition([0], [LEVEL_MAX], Duration::from_millis(1000));
 
         assert_eq!(pattern.sample_levels(Duration::from_millis(0)), [0]);
-        assert_eq!(pattern.sample_levels(Duration::from_millis(500)), [127]);
+        assert_eq!(pattern.sample_levels(Duration::from_millis(500)), [128]);
         assert_eq!(
             pattern.sample_levels(Duration::from_millis(1000)),
             [LEVEL_MAX]
         );
+    }
+
+    #[test]
+    fn transition_with_custom_easing_uses_function() {
+        fn step_curve(_: f32) -> f32 {
+            1.0
+        }
+
+        let pattern = LedPattern::<1>::new().transition_with_easing(
+            [0],
+            [LEVEL_MAX],
+            Duration::from_millis(1000),
+            Easing::Custom(step_curve),
+        );
+
+        assert_eq!(pattern.sample_levels(Duration::from_millis(1)), [LEVEL_MAX]);
     }
 
     #[test]

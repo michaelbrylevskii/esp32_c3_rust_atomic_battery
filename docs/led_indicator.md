@@ -20,19 +20,21 @@ src/common/drivers/led_indicator/
   mod.rs
   constants.rs
   backend.rs
-  controller.rs
-  digital.rs
+  async_controller.rs
+  digital_backend.rs
+  easing.rs
   pattern.rs
-  pwm.rs
+  pwm_backend.rs
 ```
 
 Что где лежит:
 
 - `backend.rs` — `LedSink` и `LedPolarity`
-- `controller.rs` — `AsyncLedController`, `AsyncLedConfig`, `AsyncLedError`
-- `pattern.rs` — `LedPattern`, `LedPatternStep`, `RepeatMode`, `Easing`
-- `digital.rs` — цифровой backend для GPIO-led
-- `pwm.rs` — PWM backend на базе `LEDC`
+- `async_controller.rs` — `AsyncLedController`, `AsyncLedConfig`, `AsyncLedError`
+- `easing.rs` — кривые переходов
+- `pattern.rs` — `LedPattern`, `LedPatternStep`, `RepeatMode`
+- `digital_backend.rs` — цифровой backend для GPIO-led
+- `pwm_backend.rs` — PWM backend на базе `LEDC`
 - `constants.rs` — общие константы вроде `LEVEL_MAX`
 
 ## Основные типы
@@ -44,7 +46,7 @@ src/common/drivers/led_indicator/
 - `LedPolarity::ActiveHigh`
 - `LedPolarity::ActiveLow`
 
-### `controller::AsyncLedController`
+### `async_controller::AsyncLedController`
 
 Основной неблокирующий API.
 
@@ -56,7 +58,7 @@ src/common/drivers/led_indicator/
 - `play_pattern(pattern)`
 - `last_worker_error()`
 
-### `controller::AsyncLedConfig`
+### `async_controller::AsyncLedConfig`
 
 Настройки фонового worker'а:
 
@@ -95,13 +97,27 @@ pub struct AsyncLedConfig {
 - `LedPattern::steady(...)`
 - `LedPattern::off()`
 
-### `digital::DigitalLedGroup`
+### `easing::Easing`
+
+Встроенные кривые переходов:
+
+- `Linear`
+- `EaseInQuad`
+- `EaseOutQuad`
+- `EaseInOutQuad`
+- `EaseInCubic`
+- `EaseOutCubic`
+- `EaseInOutCubic`
+- `EaseInOutSine`
+- `Custom(fn(f32) -> f32)`
+
+### `digital_backend::DigitalLedGroup`
 
 Цифровой backend для обычных GPIO-светодиодов.
 
 Любой уровень больше нуля трактуется как "включено".
 
-### `pwm::PwmLedGroup`
+### `pwm_backend::PwmLedGroup`
 
 PWM backend для LEDC.
 
@@ -128,8 +144,8 @@ PWM backend для LEDC.
 ```rust
 use common::drivers::led_indicator::backend::LedPolarity;
 use common::drivers::led_indicator::constants::LEVEL_MAX;
-use common::drivers::led_indicator::controller::{AsyncLedConfig, AsyncLedController};
-use common::drivers::led_indicator::digital::DigitalLedGroup;
+use common::drivers::led_indicator::async_controller::{AsyncLedConfig, AsyncLedController};
+use common::drivers::led_indicator::digital_backend::DigitalLedGroup;
 
 let group = DigitalLedGroup::new(
     [red_led, green_led],
@@ -146,8 +162,8 @@ indicator.set_levels([LEVEL_MAX, 0])?;
 
 ```rust
 use common::drivers::led_indicator::backend::LedPolarity;
-use common::drivers::led_indicator::controller::{AsyncLedConfig, AsyncLedController};
-use common::drivers::led_indicator::pwm::PwmLedGroup;
+use common::drivers::led_indicator::async_controller::{AsyncLedConfig, AsyncLedController};
+use common::drivers::led_indicator::pwm_backend::PwmLedGroup;
 use esp_idf_svc::hal::ledc::config::{Resolution, TimerConfig};
 use esp_idf_svc::hal::ledc::{LedcDriver, LedcTimerDriver};
 use esp_idf_svc::hal::units::Hertz;
@@ -226,15 +242,40 @@ let pattern = LedPattern::pulse(
 
 ```rust
 use common::drivers::led_indicator::constants::LEVEL_MAX;
+use common::drivers::led_indicator::easing::Easing;
 use common::drivers::led_indicator::pattern::{LedPattern, RepeatMode};
 use std::time::Duration;
 
 let pattern = LedPattern::<2>::new()
     .hold([LEVEL_MAX, 0], Duration::from_millis(120))
-    .transition([LEVEL_MAX, 0], [0, LEVEL_MAX], Duration::from_millis(600))
+    .transition_with_easing(
+        [LEVEL_MAX, 0],
+        [0, LEVEL_MAX],
+        Duration::from_millis(600),
+        Easing::EaseInOutSine,
+    )
     .hold([0, LEVEL_MAX], Duration::from_millis(120))
     .repeat(RepeatMode::Times(2))
     .final_levels([0, 0]);
+```
+
+### Пользовательская кривая
+
+```rust
+use common::drivers::led_indicator::easing::Easing;
+use common::drivers::led_indicator::pattern::LedPattern;
+use std::time::Duration;
+
+fn snap_to_end(_: f32) -> f32 {
+    1.0
+}
+
+let pattern = LedPattern::<1>::new().transition_with_easing(
+    [0],
+    [255],
+    Duration::from_millis(300),
+    Easing::Custom(snap_to_end),
+);
 ```
 
 ## Demo bin

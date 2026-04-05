@@ -165,10 +165,11 @@ src/
         mod.rs
         constants.rs
         backend.rs
-        controller.rs
-        digital.rs
+        async_controller.rs
+        digital_backend.rs
+        easing.rs
         pattern.rs
-        pwm.rs
+        pwm_backend.rs
       nfc_tag/
         mod.rs
         constants.rs

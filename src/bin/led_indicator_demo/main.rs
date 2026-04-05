@@ -1,10 +1,11 @@
-use common::drivers::led_indicator::backend::LedPolarity;
-use common::drivers::led_indicator::constants::LEVEL_MAX;
-use common::drivers::led_indicator::controller::{
+use common::drivers::led_indicator::async_controller::{
     AsyncLedConfig, AsyncLedController, AsyncLedError,
 };
+use common::drivers::led_indicator::backend::LedPolarity;
+use common::drivers::led_indicator::constants::LEVEL_MAX;
+use common::drivers::led_indicator::easing::Easing;
 use common::drivers::led_indicator::pattern::{LedPattern, RepeatMode};
-use common::drivers::led_indicator::pwm::{PwmLedError, PwmLedGroup};
+use common::drivers::led_indicator::pwm_backend::{PwmLedError, PwmLedGroup};
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::ledc::config::{Resolution, TimerConfig};
 use esp_idf_svc::hal::ledc::{LedcDriver, LedcTimerDriver};
@@ -129,15 +130,17 @@ fn run() -> Result<(), DemoError> {
 
         indicator.play_pattern(
             LedPattern::<2>::new()
-                .transition(
+                .transition_with_easing(
                     RED_PIN_LEVELS,
                     GREEN_PIN_LEVELS,
                     Duration::from_millis(1200),
+                    Easing::EaseInOutSine,
                 )
-                .transition(
+                .transition_with_easing(
                     GREEN_PIN_LEVELS,
                     RED_PIN_LEVELS,
                     Duration::from_millis(1200),
+                    Easing::EaseInOutSine,
                 )
                 .repeat(RepeatMode::Times(2))
                 .final_levels([0, 0]),
