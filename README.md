@@ -2,13 +2,13 @@
 
 Проект для `ESP32-C3 Super Mini` на `Rust + ESP-IDF (managed)` без Arduino-обёрток.
 
-По задумке это прошивка для устройства из RPG в реальном мире в духе Fallout:
+Это прошивка для устройства из RPG в реальном мире в духе Fallout:
 
 - есть устройство-потребитель атомной энергии
 - есть атомная батарейка
 - на батарейке лежит NFC-метка с её атрибутами
 
-Сейчас проект двигается в сторону такой модели:
+Модель работы:
 
 - ридер на стороне потребителя находит NFC-метку батареи
 - тумблер включает или выключает само устройство
@@ -27,9 +27,9 @@
   - `service_type = "consumption_config"`
   - `consumption_per_sec`
 
-Точная игровая логика ещё в проработке, поэтому в коде и документации она пока описана только на общем уровне.
+Игровая логика ещё в проработке, поэтому код и документация пока описывают её на общем уровне.
 
-Сейчас в проекте есть:
+В проекте есть:
 
 - NFC через `PN532`
 - 4-разрядный дисплей `TM1637`
@@ -63,7 +63,7 @@ Rust toolchain:
 rustup toolchain install nightly --component rust-src
 ```
 
-В проекте уже закреплён nightly через `rust-toolchain.toml`, поэтому отдельно писать `+nightly` обычно не нужно.
+В проекте закреплён nightly через `rust-toolchain.toml`, поэтому отдельно писать `+nightly` обычно не нужно.
 
 Cargo-инструменты:
 
@@ -103,7 +103,7 @@ cargo build --all-targets
 cargo build --bin app
 ```
 
-Сборка конкретного demo-таргета:
+Сборка demo-таргетов:
 
 ```bash
 cargo build --bin battery_tag_demo
@@ -143,7 +143,7 @@ Display demo:
 cargo espflash flash --bin display_demo --monitor
 ```
 
-Важно: в проекте несколько binary target, поэтому `cargo espflash flash` нужно вызывать с явным `--bin ...`.
+В проекте несколько binary target, поэтому `cargo espflash flash` нужно вызывать с явным `--bin ...`.
 
 ## Структура проекта
 
@@ -192,7 +192,7 @@ src/
 - `src/common/drivers/led_indicator.rs` — универсальная асинхронная LED-индикация и паттерны
 - `src/common/drivers/nfc_tag` — NFC driver, разбитый на sync/async/format/esp-idf слои
 - `src/common/utils` — общие утилиты и прикладные модели
-- `src/common/utils/kv_store.rs` — общий key-value формат `KV1`, вынесенный из NFC driver
+- `src/common/utils/kv_store.rs` — общий key-value формат `KV1`
 - `src/bin/app` — основной бинарник приложения
 - `src/bin/app/atomic_machine.rs` — текущий runtime и логика "атомной машины"
 - `src/bin/app/hardware.rs` — wiring и инициализация железа

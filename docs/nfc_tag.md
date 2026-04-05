@@ -2,18 +2,18 @@
 
 ## Что это такое
 
-Модуль [`nfc_tag`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/nfc_tag/mod.rs) это high-level слой поверх:
+Модуль [`nfc_tag`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/nfc_tag/mod.rs) это high-level обёртка поверх:
 
 - `pn532` как транспорта и набора низкоуровневых команд
 - NTAG / Type 2 Tag как памяти страницами
 - TLV как контейнера NDEF-сообщения
 - NDEF Text Record как формата полезной нагрузки
 
-Прикладной key-value формат после рефакторинга вынесен отдельно:
+Прикладной key-value формат описан отдельным модулем:
 
 - [`common::utils::kv_store`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/utils/kv_store.rs)
 
-Это разделение теперь явное:
+Роли модулей:
 
 - NFC driver отвечает за чтение/запись payload через PN532
 - `KvStore` отвечает за текстовый формат `KV1`
@@ -21,7 +21,7 @@
 
 ## Структура модуля
 
-После рефакторинга `nfc_tag` разложен по подмодулям:
+`nfc_tag` состоит из подмодулей:
 
 ```text
 src/common/drivers/nfc_tag/
@@ -55,13 +55,11 @@ src/common/drivers/nfc_tag/
 
 ## Что именно хранится на метке
 
-Сейчас NFC слой хранит прикладной payload как:
+NFC слой хранит прикладной payload как:
 
 - одну строку UTF-8
-- внутри одного NDEF Text Record
-- в формате `KV1`
-
-То есть это не произвольный NDEF-конструктор, а удобный application-specific storage для этого проекта.
+- один `NDEF Text Record`
+- формат `KV1`
 
 ## Основные NFC-типы
 
@@ -114,7 +112,7 @@ pub struct NfcInitConfig {
 
 Неблокирующая обёртка над `NfcTag`.
 
-Она полезна, когда:
+Типичный сценарий:
 
 - основной цикл не должен блокироваться на `poll_tag()`
 - NFC опрашивается постоянно
@@ -127,7 +125,7 @@ pub struct NfcInitConfig {
 - `write_kv_store_for_tag(expected_uid, store)`
 - `last_worker_error()`
 
-Как это работает:
+Схема работы:
 
 - worker сам опрашивает `PN532`
 - worker кэширует последнюю увиденную метку
@@ -170,7 +168,7 @@ pub struct AsyncNfcSnapshot {
 Где:
 
 - `generation` увеличивается при смене наблюдаемого состояния
-- `tag = None` означает, что метки в поле сейчас нет
+- `tag = None` означает отсутствие метки в поле
 
 ### `AsyncObservedTag`
 

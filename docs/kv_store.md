@@ -2,18 +2,11 @@
 
 ## Что это такое
 
-Модуль [`kv_store`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/utils/kv_store.rs) это небольшой утилитарный слой для хранения типизированных key-value данных.
+Модуль [`kv_store`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/utils/kv_store.rs) это утилитарный слой для хранения типизированных key-value данных.
 
-Он не зависит от:
+Он используется как текстовый прикладной формат `KV1`.
 
-- `PN532`
-- `NDEF`
-- `I2C`
-- `ESP-IDF`
-
-Именно поэтому после рефакторинга он вынесен из `drivers` в `common::utils`.
-
-Практически это означает:
+Роли слоёв:
 
 - NFC driver отвечает за чтение и запись payload
 - `KvStore` отвечает за прикладной текстовый формат `KV1`
