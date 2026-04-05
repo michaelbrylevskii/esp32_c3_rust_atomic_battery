@@ -154,10 +154,18 @@ src/
     drivers/
       mod.rs
       led_indicator.rs
-      nfc_tag.rs
+      nfc_tag/
+        mod.rs
+        constants.rs
+        format.rs
+        sync.rs
+        async.rs
+        esp_idf.rs
       segment_display.rs
     utils/
       mod.rs
+      atomic_tags.rs
+      kv_store.rs
 
   bin/
     app/
@@ -182,7 +190,9 @@ src/
 - `src/common` — общий код
 - `src/common/drivers` — hardware-обёртки и кастомные драйвера
 - `src/common/drivers/led_indicator.rs` — универсальная асинхронная LED-индикация и паттерны
-- `src/common/utils` — общие утилиты и прикладные модели NFC-тегов
+- `src/common/drivers/nfc_tag` — NFC driver, разбитый на sync/async/format/esp-idf слои
+- `src/common/utils` — общие утилиты и прикладные модели
+- `src/common/utils/kv_store.rs` — общий key-value формат `KV1`, вынесенный из NFC driver
 - `src/bin/app` — основной бинарник приложения
 - `src/bin/app/atomic_machine.rs` — текущий runtime и логика "атомной машины"
 - `src/bin/app/hardware.rs` — wiring и инициализация железа
@@ -193,10 +203,12 @@ src/
 
 ## Полезные файлы
 
-- NFC wrapper: [src/common/drivers/nfc_tag.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/nfc_tag.rs)
+- NFC wrapper: [src/common/drivers/nfc_tag/mod.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/nfc_tag/mod.rs)
 - LED indicator wrapper: [src/common/drivers/led_indicator.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/led_indicator.rs)
 - Display wrapper: [src/common/drivers/segment_display.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/segment_display.rs)
+- KV store: [src/common/utils/kv_store.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/utils/kv_store.rs)
 - Документация по NFC: [docs/nfc_tag.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/nfc_tag.md)
+- Документация по KV store: [docs/kv_store.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/kv_store.md)
 - Документация по LED: [docs/led_indicator.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/led_indicator.md)
 - Документация по дисплею: [docs/segment_display.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/segment_display.md)
 

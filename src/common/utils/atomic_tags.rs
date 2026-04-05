@@ -1,4 +1,4 @@
-use crate::drivers::nfc_tag::{KvFormatError, KvStore, KvValue};
+use crate::utils::kv_store::{KvFormatError, KvStore, KvValue};
 use core::fmt;
 
 pub const TAG_TYPE_KEY: &str = "tag_type";

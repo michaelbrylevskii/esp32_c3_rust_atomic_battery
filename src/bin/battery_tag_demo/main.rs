@@ -1,5 +1,6 @@
-use common::drivers::nfc_tag::{self, KvFormatError, NfcError, TagInfo};
+use common::drivers::nfc_tag::{self, NfcError, TagInfo};
 use common::utils::atomic_tags::{AtomicTag, AtomicTagError, BatteryTag};
+use common::utils::kv_store::KvFormatError;
 use esp_idf_svc::hal::{delay::FreeRtos, i2c::I2cError, peripherals::Peripherals};
 use esp_idf_svc::sys::EspError;
 use log::{error, info, warn};

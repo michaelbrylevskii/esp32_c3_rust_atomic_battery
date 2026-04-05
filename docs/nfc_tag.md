@@ -1,144 +1,69 @@
-# `nfc_tag`: удобная обёртка для NFC-меток
+# `nfc_tag`: high-level NFC-обёртка над PN532
 
 ## Что это такое
 
-Модуль [`nfc_tag`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/nfc_tag.rs) это high-level слой поверх:
+Модуль [`nfc_tag`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/nfc_tag/mod.rs) это high-level слой поверх:
 
 - `pn532` как транспорта и набора низкоуровневых команд
 - NTAG / Type 2 Tag как памяти страницами
 - TLV как контейнера NDEF-сообщения
 - NDEF Text Record как формата полезной нагрузки
 
-Идея простая: в коде приложения не работать руками с `ntag_read(page)` и `ntag_write(page, data)`, а пользоваться более удобным API:
+Прикладной key-value формат после рефакторинга вынесен отдельно:
 
-- `poll_tag()`
-- `read_kv_store()`
-- `write_kv_store()`
-- крутить PN532 в отдельном worker-потоке и читать только snapshot из main loop
-- выполнять редкие команды записи через async command queue
+- [`common::utils::kv_store`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/utils/kv_store.rs)
+
+Это разделение теперь явное:
+
+- NFC driver отвечает за чтение/запись payload через PN532
+- `KvStore` отвечает за текстовый формат `KV1`
+- прикладные модели вроде battery/service tag строятся поверх `KvStore`
+
+## Структура модуля
+
+После рефакторинга `nfc_tag` разложен по подмодулям:
+
+```text
+src/common/drivers/nfc_tag/
+  mod.rs
+  constants.rs
+  format.rs
+  sync.rs
+  async.rs
+  esp_idf.rs
+```
+
+Что где лежит:
+
+- `sync.rs` — синхронный high-level API над `Pn532`
+- `async.rs` — async worker как обёртка над sync API
+- `format.rs` — NDEF/TLV encode/decode
+- `esp_idf.rs` — helper-конструкторы для `esp-idf-svc`
+- `constants.rs` — именованные значения протокола и default-конфигов
 
 ## Что умеет модуль
 
-- Опрашивать метку через PN532
-- Читать UID, ATQA, SAK
-- Читать пользовательскую область NTAG начиная с page 4
-- Находить NDEF TLV внутри памяти метки
-- Читать NDEF Text Record
-- Разбирать его в key-value набор
-- Собирать key-value набор обратно
-- Записывать его на метку
-- Давать `esp-idf` helper для быстрого создания reader'а через I2C
+- опрашивать Type A метку через PN532
+- читать UID, ATQA, SAK
+- читать пользовательскую область NTAG начиная с page 4
+- находить NDEF TLV внутри памяти метки
+- читать NDEF Text Record
+- превращать payload в `KvStore`
+- записывать `KvStore` обратно на метку
+- держать async worker для постоянного опроса PN532
+- давать `esp-idf` helper для быстрого создания reader'а через I2C
 
 ## Что именно хранится на метке
 
-Сейчас модуль хранит весь набор key-value как **одну строку UTF-8** внутри **одного NDEF Text Record**.
+Сейчас NFC слой хранит прикладной payload как:
 
-Это важный архитектурный выбор:
+- одну строку UTF-8
+- внутри одного NDEF Text Record
+- в формате `KV1`
 
-- снаружи это выглядит как key-value storage
-- внутри это текстовый payload
-- модуль полностью владеет своим NDEF-сообщением
+То есть это не произвольный NDEF-конструктор, а удобный application-specific storage для этого проекта.
 
-То есть это не “произвольный NDEF-конструктор”, а именно удобное хранилище для вашего приложения.
-
-## Поддерживаемые типы
-
-Тип значения задаётся через `KvValue`:
-
-- `Str(String)`
-- `U8(u8)`
-- `U16(u16)`
-- `U32(u32)`
-- `U64(u64)`
-- `I8(i8)`
-- `I16(i16)`
-- `I32(i32)`
-- `I64(i64)`
-- `F32(f32)`
-- `F64(f64)`
-- `Bool(bool)`
-
-Ограничения:
-
-- `key` должен быть ASCII
-- `key` не должен содержать `=`, `:`, `\n`, `\r`
-- строковые значения хранятся как UTF-8
-- в строковых значениях поддерживаются escape-последовательности `\\`, `\n`, `\r`, `\t`
-- реальные переводы строки внутри payload не используются, вместо них пишется `\n`
-- `f32` и `f64` должны быть конечными значениями
-- `NaN`, `+inf`, `-inf` не поддерживаются
-
-## Внутренний формат key-value
-
-Внутри NDEF Text Record хранится строка такого вида:
-
-```text
-KV1
-name=S:Привет,\nESP32-C3
-counter=U8:42
-limit=U16:1024
-serial=U32:123456
-energy=U64:9876543210
-temperature_offset=I8:-5
-bias=I16:-32000
-temp_raw=I32:-123456
-distance=I64:-9876543210
-soc=F32:98.5
-voltage=F64:12.625
-enabled=B:1
-```
-
-Где:
-
-- первая строка `KV1` это сигнатура формата
-- далее каждая строка это `key=TYPE:value`
-- для строк типа `S` используются escape-последовательности, поэтому многострочные значения и символ `\` безопасно хранятся в одной строке
-
-Типовые префиксы:
-
-- `S` для строки
-  Обычный текст в UTF-8. Можно хранить кириллицу и другие Unicode-символы. Переносы строк и обратный слеш хранятся через escape-последовательности.
-- `U8` для маленького беззнакового целого числа
-  Диапазон: `0..=255`.
-- `U16` для беззнакового целого числа побольше
-  Диапазон: `0..=65535`.
-- `U32` для 32-битного беззнакового целого числа
-  Диапазон: `0..=4294967295`.
-- `U64` для большого беззнакового целого числа
-  Диапазон: `0..=18446744073709551615`.
-- `I8` для маленького знакового целого числа
-  Поддерживает отрицательные значения. Диапазон: `-128..=127`.
-- `I16` для знакового целого числа побольше
-  Диапазон: `-32768..=32767`.
-- `I32` для 32-битного знакового целого числа
-  Диапазон: `-2147483648..=2147483647`.
-- `I64` для большого знакового целого числа
-  Диапазон: `-9223372036854775808..=9223372036854775807`.
-- `F32` для числа с плавающей точкой обычной точности
-  Подходит для дробных значений вроде `98.5`. В библиотеке разрешены только конечные значения, без `NaN` и бесконечностей.
-- `F64` для числа с плавающей точкой повышенной точности
-  Тоже подходит для дробных значений. В библиотеке разрешены только конечные значения, без `NaN` и бесконечностей.
-- `B` для логического значения
-  То есть `true` или `false`.
-
-Boolean хранится как:
-
-- `B:0` -> `false`
-- `B:1` -> `true`
-
-## Ограничения текущей реализации
-
-Важно понимать текущие границы модуля:
-
-- модуль работает только с одним NDEF Text Record
-- модуль не пытается сохранять чужие NDEF records
-- при `write_kv_store()` пользовательская NDEF-область переписывается целиком
-- если на метке уже лежит другой текстовый NDEF, но не в формате `KV1`, чтение вернёт `InvalidHeader`
-- если на метке лежит нечто нестандартное или не-текстовое, чтение может вернуть ошибку формата или TLV/NDEF
-
-Проще говоря: этот слой хорош как **свой формат хранения для своего проекта**, а не как универсальный редактор любых NFC-меток.
-
-## Основные типы
+## Основные NFC-типы
 
 ### `TagInfo`
 
@@ -152,33 +77,9 @@ pub struct TagInfo {
 }
 ```
 
-### `KvStore`
-
-Основной контейнер key-value данных.
-
-Полезные методы:
-
-- `KvStore::new()`
-- `insert_string(...)`
-- `insert_u8(...)`
-- `insert_u16(...)`
-- `insert_u32(...)`
-- `insert_u64(...)`
-- `insert_i8(...)`
-- `insert_i16(...)`
-- `insert_i32(...)`
-- `insert_i64(...)`
-- `insert_f32(...)`
-- `insert_f64(...)`
-- `insert_bool(...)`
-- `get(key)`
-- `entries()`
-- `to_text()`
-- `from_text()`
-
 ### `NfcTag`
 
-High-level обёртка над `Pn532`.
+Синхронный high-level wrapper над `Pn532`.
 
 Основные методы:
 
@@ -191,6 +92,24 @@ High-level обёртка над `Pn532`.
 - `read_kv_store()`
 - `write_kv_store(&store)`
 
+### `NfcInitConfig`
+
+Конфигурация retry-инициализации:
+
+```rust
+pub struct NfcInitConfig {
+    pub startup_delay: Duration,
+    pub retry_delay: Duration,
+    pub attempts: usize,
+}
+```
+
+Значения по умолчанию:
+
+- `startup_delay = 200 ms`
+- `retry_delay = 200 ms`
+- `attempts = 5`
+
 ### `AsyncNfcTag`
 
 Неблокирующая обёртка над `NfcTag`.
@@ -199,7 +118,7 @@ High-level обёртка над `Pn532`.
 
 - основной цикл не должен блокироваться на `poll_tag()`
 - NFC опрашивается постоянно
-- запись в метку бывает редко, но UI и state machine должны жить независимо
+- UI и state machine должны жить независимо от PN532
 
 Основные методы:
 
@@ -212,8 +131,30 @@ High-level обёртка над `Pn532`.
 
 - worker сам опрашивает `PN532`
 - worker кэширует последнюю увиденную метку
-- main loop читает только быстрый `snapshot()`
-- запись идёт отдельной командой в тот же worker, поэтому транспорт остаётся централизован в одном месте
+- main loop читает только `snapshot()`
+- запись идёт отдельной командой в тот же worker
+
+### `AsyncNfcConfig`
+
+Настройки async worker:
+
+```rust
+pub struct AsyncNfcConfig {
+    pub poll_interval: Duration,
+    pub poll_timeout: Duration,
+    pub removal_debounce: Duration,
+    pub thread_stack_size: usize,
+}
+```
+
+Значения по умолчанию:
+
+- `poll_interval = 30 ms`
+- `poll_timeout = 40 ms`
+- `removal_debounce = 1200 ms`
+- `thread_stack_size = 8192`
+
+`removal_debounce` важен для живого железа: он защищает от ложного “метка пропала” при кратковременных сбоях PN532.
 
 ### `AsyncNfcSnapshot`
 
@@ -244,7 +185,7 @@ Payload хранится в трёх вариантах:
 
 - `KvStore(store)` — на метке корректный payload текущего приложения
 - `Empty` — метка есть, но NDEF payload не найден
-- `ReadError(text)` — транспорт жив, UID прочитан, но содержимое не удалось разобрать или прочитать
+- `ReadError(text)` — UID прочитан, но содержимое не удалось прочитать или разобрать
 
 ### `nfc_tag::esp_idf`
 
@@ -260,62 +201,19 @@ Payload хранится в трёх вариантах:
 - `esp_idf::new_default(i2c, sda, scl)`
 - `esp_idf::new_async_default(i2c, sda, scl, worker_config)`
 
-## Типичный сценарий использования
+## Типичный сценарий: sync API
 
 ### 1. Создать `NfcTag` для `esp-idf`
 
-Теперь для типового случая не нужно руками собирать `I2cDriver`, `I2CInterface`, `StdTimer` и `Pn532`.
-
-Достаточно передать I2C peripheral и пины:
-
 ```rust
-let mut nfc = nfc_tag::esp_idf::new_default(
+let mut nfc = common::drivers::nfc_tag::esp_idf::new_default(
     p.i2c0,
     p.pins.gpio3,
     p.pins.gpio4,
 )?;
 ```
-
-Если нужна не стандартная, а своя скорость шины:
-
-```rust
-use esp_idf_svc::hal::units::Hertz;
-
-let mut nfc = nfc_tag::esp_idf::new(
-    p.i2c0,
-    p.pins.gpio3,
-    p.pins.gpio4,
-    Hertz(400_000),
-)?;
-```
-
-Что принимает helper снаружи:
-
-- I2C peripheral
-- SDA pin
-- SCL pin
-- при необходимости baudrate
-
-Что helper делает внутри:
-
-- собирает `I2cConfig`
-- поднимает `I2cDriver`
-- создаёт `I2CInterface`
-- создаёт `StdTimer`
-- создаёт `Pn532`
-- создаёт `NfcTag`
 
 ### 2. Инициализировать PN532
-
-Минимальный низкоуровневый вариант:
-
-```rust
-nfc.init()?;
-let fw = nfc.firmware_version()?;
-info!("PN532 firmware raw: {:02X?}", fw);
-```
-
-Но в этом проекте удобнее пользоваться уже готовой инициализацией с задержкой и retry:
 
 ```rust
 nfc.init_default()?;
@@ -323,229 +221,67 @@ let fw = nfc.firmware_version()?;
 info!("PN532 firmware raw: {:02X?}", fw);
 ```
 
-На реальном железе это оказалось полезно: иногда первый `sam_configuration` отдаёт timeout сразу после boot.
-
-### 2.1. Кастомная конфигурация инициализации
+### 3. Прочитать payload как `KvStore`
 
 ```rust
-use common::drivers::nfc_tag::NfcInitConfig;
-use std::time::Duration;
+use common::utils::kv_store::{KvStore, KvValue};
 
-nfc.init_with_config(NfcInitConfig {
-    startup_delay: Duration::from_millis(300),
-    retry_delay: Duration::from_millis(150),
-    attempts: 6,
-})?;
-```
+if let Some(tag) = nfc.poll_tag(Duration::from_millis(1000))? {
+    let store = nfc.read_kv_store()?;
+    info!("UID = {:02X?}", tag.uid);
 
-Поля:
-
-- `startup_delay` это пауза перед первой попыткой инициализации
-- `retry_delay` это пауза между повторными попытками
-- `attempts` это общее число попыток
-
-Значения по умолчанию в `init_default()`:
-
-- `startup_delay = 200 ms`
-- `retry_delay = 200 ms`
-- `attempts = 5`
-
-### 3. Ждать метку
-
-```rust
-match nfc.poll_tag(Duration::from_millis(1000))? {
-    Some(tag) => {
-        info!(
-            "Tag UID: {:02X?}, ATQA={:02X?}, SAK=0x{:02X}",
-            tag.uid, tag.atqa, tag.sak
-        );
-    }
-    None => {
-        // Метки нет
+    match store.get("counter") {
+        Some(KvValue::U8(value)) => info!("counter = {value}"),
+        _ => info!("counter is missing"),
     }
 }
 ```
 
-`None` это нормальный случай: просто в поле нет метки.
-
-## Пример: записать набор key-value
+### 4. Записать `KvStore` на метку
 
 ```rust
+use common::utils::kv_store::KvStore;
+
 let mut store = KvStore::new();
-store.insert_string("name", "Привет,\nESP32-C3")?;
-store.insert_u8("counter", 42)?;
-store.insert_u16("limit", 1024)?;
-store.insert_u32("serial", 123456)?;
-store.insert_u64("energy", 9876543210)?;
-store.insert_i8("temperature_offset", -5)?;
-store.insert_i16("bias", -32000)?;
-store.insert_i32("temp_raw", -123456)?;
-store.insert_i64("distance", -9876543210)?;
-store.insert_f32("soc", 98.5)?;
-store.insert_f64("voltage", 12.625)?;
+store.insert_string("name", "ESP32-C3")?;
+store.insert_u32("consumption_per_sec", 1500)?;
 store.insert_bool("enabled", true)?;
 
 nfc.write_kv_store(&store)?;
 ```
 
-Пример того, как строка будет выглядеть внутри самого `KV1` payload:
-
-```text
-name=S:Привет,\nESP32-C3
-```
-
-То есть в формате хранится не реальный перевод строки, а два символа `\` и `n`.
-
-## Пример: прочитать набор key-value
+## Типичный сценарий: async API
 
 ```rust
-let store = nfc.read_kv_store()?;
+use common::drivers::nfc_tag::{AsyncNfcConfig, AsyncNfcTag};
 
-for entry in store.entries() {
-    info!("{entry:?}");
+let mut sync_nfc = common::drivers::nfc_tag::esp_idf::new_default(
+    p.i2c0,
+    p.pins.gpio3,
+    p.pins.gpio4,
+)?;
+sync_nfc.init_default()?;
+
+let async_nfc = AsyncNfcTag::new(sync_nfc, AsyncNfcConfig::default())?;
+
+let snapshot = async_nfc.snapshot()?;
+if let Some(tag) = snapshot.tag {
+    info!("UID = {:02X?}", tag.info.uid);
 }
 ```
 
-## Пример: получить конкретное значение
+## Ограничения текущей реализации
 
-```rust
-if let Some(value) = store.get("enabled") {
-    info!("enabled = {:?}", value);
-}
-```
+- модуль работает только с одним NDEF Text Record
+- модуль не пытается сохранять чужие NDEF records
+- при `write_kv_store()` пользовательская NDEF-область переписывается целиком
+- если на метке лежит другой текстовый NDEF, но не в формате `KV1`, разбор payload вернёт ошибку формата
+- если на метке лежит нестандартный payload, async snapshot может вернуть `ReadError(...)`
 
-Если нужно строго вытащить конкретный тип, сейчас это делается через `match`:
+Проще говоря: это хороший storage-слой для своего проекта, а не универсальный редактор любых NFC-меток.
 
-```rust
-match store.get("counter") {
-    Some(KvValue::U8(value)) => info!("counter = {value}"),
-    Some(other) => warn!("counter has unexpected type: {:?}", other),
-    None => warn!("counter is missing"),
-}
-```
+## Связанные документы
 
-## Пример полного цикла read/write/read-back
-
-Ниже логика, близкая к той, что сейчас используется в `test_reader()`:
-
-```rust
-let mut demo_store = KvStore::new();
-demo_store.insert_string("name", "Привет,\nESP32-C3")?;
-demo_store.insert_u8("counter", 42)?;
-demo_store.insert_u16("limit", 1024)?;
-demo_store.insert_u32("serial", 123456)?;
-demo_store.insert_u64("energy", 9876543210)?;
-demo_store.insert_i8("temperature_offset", -5)?;
-demo_store.insert_i16("bias", -32000)?;
-demo_store.insert_i32("temp_raw", -123456)?;
-demo_store.insert_i64("distance", -9876543210)?;
-demo_store.insert_f32("soc", 98.5)?;
-demo_store.insert_f64("voltage", 12.625)?;
-demo_store.insert_bool("enabled", true)?;
-
-if let Some(tag) = nfc.poll_tag(Duration::from_millis(1000))? {
-    info!("Found tag: {:02X?}", tag.uid);
-
-    match nfc.read_kv_store() {
-        Ok(store) => info!("Current tag data: {:?}", store.entries()),
-        Err(err) => warn!("Current tag data cannot be read yet: {err}"),
-    }
-
-    nfc.write_kv_store(&demo_store)?;
-
-    let read_back = nfc.read_kv_store()?;
-    if read_back == demo_store {
-        info!("read-back matches written data");
-    } else {
-        warn!("read-back differs from written data");
-    }
-}
-```
-
-## Какие demo есть в проекте
-
-Для NFC сейчас есть два отдельных demo-bin:
-
-- [src/bin/battery_tag_demo/main.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/bin/battery_tag_demo/main.rs)
-- [src/bin/service_tag_demo/main.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/bin/service_tag_demo/main.rs)
-
-Оба demo работают одинаково по схеме:
-
-- создают `NfcTag` через `nfc_tag::esp_idf::new_default(...)`
-- вызывают `init_default()`
-- печатают firmware version PN532
-- ждут NFC-метку
-- при первом обнаружении конкретной метки записывают базовую структуру нужного типа
-- сразу после записи делают read-back и валидируют, что считанная структура совпала с ожидаемой
-
-Запуск:
-
-```bash
-cargo espflash flash --bin battery_tag_demo --monitor
-cargo espflash flash --bin service_tag_demo --monitor
-```
-
-## Какие ошибки можно ожидать
-
-### `NfcError::NoNdefMessage`
-
-На метке нет NDEF TLV. Это нормально для пустой или неинициализированной метки.
-
-### `KvFormatError::InvalidHeader`
-
-На метке есть текстовый NDEF, но это не наш формат `KV1`.
-
-Пример: метка ранее была записана через NFC Tools как обычный Text Record вроде `Hello, NFC!`.
-
-### `NfcError::PayloadTooLarge`
-
-Собранный payload не помещается в пользовательскую область метки.
-
-Это ограничение зависит от ёмкости конкретной NTAG.
-
-### `NfcError::TagStatus(...)`
-
-PN532/NTAG вернули статус ошибки при чтении или записи страницы.
-
-### `NfcError::InvalidResponse(...)`
-
-Низкоуровневый ответ от PN532/NTAG пришёл не в том формате, который ожидался.
-
-### `KvFormatError::InvalidEscapeSequence` / `TrailingEscape`
-
-Строковое значение типа `S` содержит некорректную escape-последовательность.
-
-Пример плохих значений:
-
-- `note=S:bad\x`
-- `note=S:bad\`
-
-## Практические замечания
-
-- Для PN532 по I2C нужны внешние pull-up резисторы на SDA/SCL
-- Модуль PN532 должен быть аппаратно переведён в I2C mode
-- В этом проекте `expected_len = 32` для `INLIST_ONE_ISO_A_TARGET` оказался безопаснее коротких значений
-- Для `ntag_read(page)` ожидается `17` байт: `status + 16 data bytes`
-- На некоторых стартах PN532 может не ответить на первый `sam_configuration`, поэтому retry на init оказался полезен
-
-## Когда эту обёртку стоит расширять
-
-Следующие логичные улучшения:
-
-- typed getters: `get_u8("counter")`, `get_bool("enabled")`
-- удаление ключей
-- обновление значения по месту через удобный API
-- поддержка нескольких NDEF records
-- отдельный бинарный формат вместо текстового
-
-## Кратко
-
-Если совсем коротко, пользоваться модулем нужно так:
-
-1. Создать `NfcTag`
-2. Вызвать `init()`
-3. Ждать метку через `poll_tag()`
-4. Читать через `read_kv_store()`
-5. Записывать через `write_kv_store()`
-
-Для текущего проекта это уже рабочий и проверенный на железе слой поверх PN532.
+- KV-формат: [docs/kv_store.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/kv_store.md)
+- LED indicator: [docs/led_indicator.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/led_indicator.md)
+- Segment display: [docs/segment_display.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/segment_display.md)

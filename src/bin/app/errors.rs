@@ -1,7 +1,8 @@
 use common::drivers::led_indicator::AsyncLedError;
-use common::drivers::nfc_tag::{AsyncNfcError, KvFormatError, NfcError};
+use common::drivers::nfc_tag::{AsyncNfcError, NfcError};
 use common::drivers::segment_display::{AsyncDisplayError, DisplayError};
 use common::utils::atomic_tags::AtomicTagError;
+use common::utils::kv_store::KvFormatError;
 use esp_idf_svc::hal::i2c::I2cError;
 use esp_idf_svc::sys::EspError;
 use std::fmt;

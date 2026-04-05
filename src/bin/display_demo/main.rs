@@ -1,7 +1,8 @@
-use common::drivers::nfc_tag::{KvFormatError, NfcError};
+use common::drivers::nfc_tag::NfcError;
 use common::drivers::segment_display::{
     Align, AsyncDisplayError, AsyncSegmentDisplay4, DisplayError, IntFormat,
 };
+use common::utils::kv_store::KvFormatError;
 use esp_idf_svc::hal::{delay::FreeRtos, i2c::I2cError, peripherals::Peripherals};
 use esp_idf_svc::sys::EspError;
 use std::fmt;
