@@ -177,7 +177,14 @@ src/
         sync_nfc.rs
         async_nfc.rs
         esp_idf.rs
-      segment_display.rs
+      segment_display/
+        mod.rs
+        constants.rs
+        types.rs
+        frame.rs
+        sync_display.rs
+        async_display.rs
+        worker.rs
     utils/
       mod.rs
       atomic_tags.rs
@@ -225,7 +232,7 @@ src/
 
 - NFC wrapper: [src/common/drivers/nfc_tag/mod.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/nfc_tag/mod.rs)
 - LED indicator wrapper: [src/common/drivers/led_indicator/mod.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/led_indicator/mod.rs)
-- Display wrapper: [src/common/drivers/segment_display.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/segment_display.rs)
+- Display wrapper: [src/common/drivers/segment_display/mod.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/segment_display/mod.rs)
 - KV store: [src/common/utils/kv_store.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/utils/kv_store.rs)
 - Документация по NFC: [docs/nfc_tag.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/nfc_tag.md)
 - Документация по KV store: [docs/kv_store.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/kv_store.md)
