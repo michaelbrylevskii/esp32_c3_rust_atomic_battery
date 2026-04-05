@@ -28,15 +28,15 @@ src/common/drivers/nfc_tag/
   mod.rs
   constants.rs
   format.rs
-  sync.rs
-  async.rs
+  sync_nfc.rs
+  async_nfc.rs
   esp_idf.rs
 ```
 
 Что где лежит:
 
-- `sync.rs` — синхронный high-level API над `Pn532`
-- `async.rs` — async worker как обёртка над sync API
+- `sync_nfc.rs` — синхронный high-level API над `Pn532`
+- `async_nfc.rs` — async worker как обёртка над sync API
 - `format.rs` — NDEF/TLV encode/decode
 - `esp_idf.rs` — helper-конструкторы для `esp-idf-svc`
 - `constants.rs` — именованные значения протокола и default-конфигов
@@ -68,6 +68,8 @@ NFC слой хранит прикладной payload как:
 Информация о найденной метке:
 
 ```rust
+use common::drivers::nfc_tag::sync_nfc::{NfcInitConfig, NfcTag, TagInfo};
+
 pub struct TagInfo {
     pub uid: Vec<u8>,
     pub atqa: [u8; 2],
@@ -95,6 +97,8 @@ pub struct TagInfo {
 Конфигурация retry-инициализации:
 
 ```rust
+use common::drivers::nfc_tag::sync_nfc::NfcInitConfig;
+
 pub struct NfcInitConfig {
     pub startup_delay: Duration,
     pub retry_delay: Duration,
@@ -159,6 +163,10 @@ pub struct AsyncNfcConfig {
 Снимок текущего состояния async worker'а:
 
 ```rust
+use common::drivers::nfc_tag::async_nfc::{
+    AsyncNfcConfig, AsyncNfcSnapshot, AsyncNfcTag, AsyncObservedTag, AsyncTagPayload,
+};
+
 pub struct AsyncNfcSnapshot {
     pub generation: u64,
     pub tag: Option<AsyncObservedTag>,
@@ -251,7 +259,7 @@ nfc.write_kv_store(&store)?;
 ## Типичный сценарий: async API
 
 ```rust
-use common::drivers::nfc_tag::{AsyncNfcConfig, AsyncNfcTag};
+use common::drivers::nfc_tag::async_nfc::{AsyncNfcConfig, AsyncNfcTag};
 
 let mut sync_nfc = common::drivers::nfc_tag::esp_idf::new_default(
     p.i2c0,

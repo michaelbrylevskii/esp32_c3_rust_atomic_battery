@@ -1,5 +1,6 @@
 use common::drivers::led_indicator::AsyncLedError;
-use common::drivers::nfc_tag::{AsyncNfcError, NfcError};
+use common::drivers::nfc_tag::async_nfc::AsyncNfcError;
+use common::drivers::nfc_tag::sync_nfc::NfcError;
 use common::drivers::segment_display::{AsyncDisplayError, DisplayError};
 use common::utils::atomic_tags::AtomicTagError;
 use common::utils::kv_store::KvFormatError;

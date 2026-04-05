@@ -4,7 +4,7 @@ use super::constants::{
     DEFAULT_ASYNC_POLL_INTERVAL, DEFAULT_ASYNC_POLL_TIMEOUT, DEFAULT_ASYNC_REMOVAL_DEBOUNCE,
     DEFAULT_ASYNC_THREAD_STACK_SIZE,
 };
-use super::sync::{NfcError, NfcTag, TagInfo};
+use super::sync_nfc::{NfcError, NfcTag, TagInfo};
 use crate::utils::kv_store::KvStore;
 use core::fmt::{self, Debug};
 use core::time::Duration;

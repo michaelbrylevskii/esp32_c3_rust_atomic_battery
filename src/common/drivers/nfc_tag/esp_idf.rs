@@ -1,7 +1,7 @@
 //! Helper-конструкторы и transport glue для `esp-idf-svc`.
 
-use super::r#async::{AsyncNfcConfig, AsyncNfcError, AsyncNfcTag};
-use super::sync::NfcTag;
+use super::async_nfc::{AsyncNfcConfig, AsyncNfcError, AsyncNfcTag};
+use super::sync_nfc::NfcTag;
 use core::convert::Infallible;
 use core::time::Duration;
 use esp_idf_svc::hal::gpio::{InputPin, OutputPin};

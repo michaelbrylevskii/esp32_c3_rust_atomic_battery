@@ -3,6 +3,7 @@ use common::drivers::led_indicator::{
     AsyncLedConfig, AsyncLedController, DigitalLedGroup, LedPolarity,
 };
 use common::drivers::nfc_tag;
+use common::drivers::nfc_tag::async_nfc::{AsyncNfcConfig, AsyncNfcTag};
 use common::drivers::segment_display::AsyncSegmentDisplay4;
 use esp_idf_svc::hal::gpio::{Input, Output};
 use esp_idf_svc::hal::{
@@ -44,7 +45,7 @@ impl AtomicMachineHardware<'static> {
 
         let mut nfc = nfc_tag::esp_idf::new_default(nfc_i2c, nfc_i2c_sda_pin, nfc_i2c_scl_pin)?;
         nfc.init_default()?;
-        let nfc = nfc_tag::AsyncNfcTag::new(nfc, nfc_tag::AsyncNfcConfig::default())?;
+        let nfc = AsyncNfcTag::new(nfc, AsyncNfcConfig::default())?;
 
         let display = AsyncSegmentDisplay4::new(display_clk_pin, display_dio_pin)?;
         display.clear()?;

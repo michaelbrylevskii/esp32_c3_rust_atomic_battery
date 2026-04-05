@@ -1,4 +1,4 @@
-use common::drivers::nfc_tag::NfcError;
+use common::drivers::nfc_tag::sync_nfc::NfcError;
 use common::drivers::segment_display::{
     Align, AsyncDisplayError, AsyncSegmentDisplay4, DisplayError, IntFormat,
 };

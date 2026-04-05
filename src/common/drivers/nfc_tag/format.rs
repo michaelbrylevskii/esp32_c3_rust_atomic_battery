@@ -2,7 +2,7 @@ use super::constants::{
     TLV_LOCK_CONTROL, TLV_MEMORY_CONTROL, TLV_NDEF_MESSAGE, TLV_NULL, TLV_PROPRIETARY,
     TLV_TERMINATOR,
 };
-use super::sync::NfcError;
+use super::sync_nfc::NfcError;
 use crate::utils::kv_store::KvFormatError;
 use core::fmt::Debug;
 use ndef::{Message, Payload, Record, RecordType};

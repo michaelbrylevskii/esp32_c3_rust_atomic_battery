@@ -158,8 +158,8 @@ src/
         mod.rs
         constants.rs
         format.rs
-        sync.rs
-        async.rs
+        sync_nfc.rs
+        async_nfc.rs
         esp_idf.rs
       segment_display.rs
     utils/
