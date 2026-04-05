@@ -1,4 +1,4 @@
-use common::drivers::led_indicator::AsyncLedError;
+use common::drivers::led_indicator::controller::AsyncLedError;
 use common::drivers::nfc_tag::async_nfc::AsyncNfcError;
 use common::drivers::nfc_tag::sync_nfc::NfcError;
 use common::drivers::segment_display::{AsyncDisplayError, DisplayError};

@@ -1,7 +1,8 @@
 use crate::errors::AppError;
 use crate::hardware::AtomicMachineHardware;
 use crate::storage::{ActiveSessionRecord, AppStorage};
-use common::drivers::led_indicator::{LedPattern, LEVEL_MAX};
+use common::drivers::led_indicator::constants::LEVEL_MAX;
+use common::drivers::led_indicator::pattern::LedPattern;
 use common::drivers::nfc_tag;
 use common::drivers::nfc_tag::async_nfc::{AsyncObservedTag, AsyncTagPayload};
 use common::drivers::nfc_tag::sync_nfc::TagInfo;

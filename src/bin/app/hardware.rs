@@ -1,7 +1,7 @@
 use crate::errors::AppError;
-use common::drivers::led_indicator::{
-    AsyncLedConfig, AsyncLedController, DigitalLedGroup, LedPolarity,
-};
+use common::drivers::led_indicator::backend::LedPolarity;
+use common::drivers::led_indicator::controller::{AsyncLedConfig, AsyncLedController};
+use common::drivers::led_indicator::digital::DigitalLedGroup;
 use common::drivers::nfc_tag;
 use common::drivers::nfc_tag::async_nfc::{AsyncNfcConfig, AsyncNfcTag};
 use common::drivers::segment_display::AsyncSegmentDisplay4;

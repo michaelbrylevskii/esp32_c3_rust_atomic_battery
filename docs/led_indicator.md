@@ -1,88 +1,62 @@
-# `led_indicator`: универсальная асинхронная LED-индикация
+# `led_indicator`: асинхронная LED-индикация, паттерны и backend'ы
 
 ## Что это такое
 
-Модуль [`led_indicator`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/led_indicator.rs) это неблокирующий driver для одного или нескольких светодиодов.
+Модуль [`led_indicator`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/led_indicator/mod.rs) это набор слоёв для управления одним или несколькими светодиодами:
 
-Он решает две задачи:
+- backend применяет уровни к физическим каналам
+- pattern описывает шаги, переходы и повторения
+- controller исполняет желаемый режим в фоне
 
-- хранит желаемое LED-состояние отдельно от основной логики приложения
-- выполняет мигание и анимации в фоне, не блокируя основной цикл
+Модель уровней единая для всех backend'ов:
 
-Модуль специально сделан универсальным:
+- `0` — канал выключен
+- `255` — канал полностью включён
 
-- количество каналов задаётся generic-параметром
-- для каждого канала можно указать `active-high` или `active-low`
-- уровни яркости задаются в диапазоне `0..=255`
-- паттерны умеют хранить как простые удержания, так и переходы между уровнями
+## Структура модуля
 
-## Что умеет модуль
+```text
+src/common/drivers/led_indicator/
+  mod.rs
+  constants.rs
+  backend.rs
+  controller.rs
+  digital.rs
+  pattern.rs
+  pwm.rs
+```
 
-- статически выставлять уровни для группы LED
-- выключать всю группу одним вызовом
-- запускать конечные и бесконечные паттерны
-- описывать паттерны как последовательность шагов
-- поддерживать плавные переходы на уровне модели
-- работать поверх разных backend'ов через trait `LedSink`
+Что где лежит:
 
-Сейчас в проекте реализован цифровой backend:
-
-- `DigitalLedGroup`
-
-Он трактует любой уровень больше нуля как "включено".
-
-- для обычного GPIO-led всё уже работает
-- API уже готово к будущему PWM backend'у
-- если позже добавить backend на LEDC/PWM, менять формат паттернов не придётся
+- `backend.rs` — `LedSink` и `LedPolarity`
+- `controller.rs` — `AsyncLedController`, `AsyncLedConfig`, `AsyncLedError`
+- `pattern.rs` — `LedPattern`, `LedPatternStep`, `RepeatMode`, `Easing`
+- `digital.rs` — цифровой backend для GPIO-led
+- `pwm.rs` — PWM backend на базе `LEDC`
+- `constants.rs` — общие константы вроде `LEVEL_MAX`
 
 ## Основные типы
 
-### `LedPolarity`
+### `backend::LedPolarity`
 
 Полярность отдельного канала:
 
 - `LedPolarity::ActiveHigh`
 - `LedPolarity::ActiveLow`
 
-Это позволяет одинаково описывать:
+### `controller::AsyncLedController`
 
-- светодиоды, которые загораются при `HIGH`
-- встроенные или внешние active-low светодиоды
+Основной неблокирующий API.
 
-### `DigitalLedGroup`
+Полезные методы:
 
-Цифровой backend для набора GPIO-пинов.
-
-Создаётся из массива `PinDriver<'_, Output>` и массива полярностей:
-
-```rust
-let group = DigitalLedGroup::new(
-    [red_led, green_led],
-    [LedPolarity::ActiveHigh, LedPolarity::ActiveHigh],
-)?;
-```
-
-### `AsyncLedController`
-
-Основной async API.
-
-Он принимает backend и запускает отдельный worker-поток:
-
-```rust
-let indicator = AsyncLedController::<2>::new(
-    group,
-    AsyncLedConfig::default(),
-)?;
-```
-
-Основные методы:
-
+- `new(backend, config)`
 - `set_levels([..])`
 - `turn_off()`
 - `play_pattern(pattern)`
 - `last_worker_error()`
 
-### `AsyncLedConfig`
+### `controller::AsyncLedConfig`
 
 Настройки фонового worker'а:
 
@@ -93,50 +67,69 @@ pub struct AsyncLedConfig {
 }
 ```
 
-По умолчанию:
+Значения по умолчанию:
 
 - `worker_tick = 20 ms`
 - `thread_stack_size = 4096`
 
-### `LedPattern`
+### `pattern::LedPattern`
 
 Модель LED-анимации.
 
-Паттерн состоит из шагов `LedPatternStep`:
+Паттерн состоит из шагов:
 
-- `Hold { levels, duration }`
-- `Transition { from, to, duration, easing }`
+- `LedPatternStep::Hold { levels, duration }`
+- `LedPatternStep::Transition { from, to, duration, easing }`
 
-Плюс задаётся режим повторения:
+И поддерживает режимы повторения:
 
 - `RepeatMode::Once`
 - `RepeatMode::Times(n)`
 - `RepeatMode::Forever`
 
-И опционально финальные уровни после завершения:
+Готовые фабрики:
 
-- `final_levels([..])`
+- `LedPattern::blink(...)`
+- `LedPattern::alternate(...)`
+- `LedPattern::pulse(...)`
+- `LedPattern::steady(...)`
+- `LedPattern::off()`
 
-## Уровни яркости
+### `digital::DigitalLedGroup`
 
-Модель использует диапазон `0..=255`:
+Цифровой backend для обычных GPIO-светодиодов.
 
-- `0` = канал выключен
-- `255` = канал полностью включён
+Любой уровень больше нуля трактуется как "включено".
 
-Для цифрового backend'а это означает:
+### `pwm::PwmLedGroup`
 
-- `0` превращается в off
-- любой уровень больше `0` превращается в on
+PWM backend для LEDC.
 
-Модель уровней и переходов уже подходит для PWM backend'а. В цифровом backend'е GPIO-led покажет дискретное включение и выключение.
+Он принимает:
 
-## Пример: статическая индикация
+- общий `LEDC timer`, который остаётся живым внутри backend'а
+- массив уже созданных `LedcDriver`
+- массив полярностей каналов
+
+## Как работает controller
+
+`AsyncLedController` хранит желаемый режим и выполняет его в фоне:
+
+- `set_levels([..])` задаёт статические уровни
+- `play_pattern(pattern)` запускает паттерн
+- новая команда полностью заменяет предыдущий режим
+
+Основной цикл приложения не делает `delay` ради LED-эффектов. Он только задаёт состояние или паттерн.
+
+## Digital backend
+
+Пример для двух обычных GPIO-led:
 
 ```rust
-use common::drivers::led_indicator::{
-    AsyncLedConfig, AsyncLedController, DigitalLedGroup, LedPolarity, LEVEL_MAX,
-};
+use common::drivers::led_indicator::backend::LedPolarity;
+use common::drivers::led_indicator::constants::LEVEL_MAX;
+use common::drivers::led_indicator::controller::{AsyncLedConfig, AsyncLedController};
+use common::drivers::led_indicator::digital::DigitalLedGroup;
 
 let group = DigitalLedGroup::new(
     [red_led, green_led],
@@ -144,16 +137,65 @@ let group = DigitalLedGroup::new(
 )?;
 
 let indicator = AsyncLedController::<2>::new(group, AsyncLedConfig::default())?;
-
 indicator.set_levels([LEVEL_MAX, 0])?;
 ```
 
-Этот вызов включает только красный LED.
+## PWM backend
 
-## Пример: попеременное мигание red/green
+Пример для двух LEDC-каналов на общей PWM-timer:
 
 ```rust
-use common::drivers::led_indicator::{LedPattern, LEVEL_MAX};
+use common::drivers::led_indicator::backend::LedPolarity;
+use common::drivers::led_indicator::controller::{AsyncLedConfig, AsyncLedController};
+use common::drivers::led_indicator::pwm::PwmLedGroup;
+use esp_idf_svc::hal::ledc::config::{Resolution, TimerConfig};
+use esp_idf_svc::hal::ledc::{LedcDriver, LedcTimerDriver};
+use esp_idf_svc::hal::units::Hertz;
+
+let timer = LedcTimerDriver::new(
+    peripherals.ledc.timer0,
+    &TimerConfig::default()
+        .frequency(Hertz(5_000))
+        .resolution(Resolution::Bits8),
+)?;
+
+let red = LedcDriver::new(peripherals.ledc.channel0, &timer, peripherals.pins.gpio0)?;
+let green = LedcDriver::new(peripherals.ledc.channel1, &timer, peripherals.pins.gpio1)?;
+
+let group = PwmLedGroup::new(
+    timer,
+    [red, green],
+    [LedPolarity::ActiveHigh, LedPolarity::ActiveHigh],
+)?;
+
+let indicator = AsyncLedController::<2>::new(group, AsyncLedConfig::default())?;
+```
+
+PWM backend использует все уровни `0..=255` и поэтому поддерживает плавные переходы и пульсации не только на уровне модели, но и на железе.
+
+## Примеры паттернов
+
+### Простое мигание
+
+```rust
+use common::drivers::led_indicator::constants::LEVEL_MAX;
+use common::drivers::led_indicator::pattern::LedPattern;
+use std::time::Duration;
+
+let pattern = LedPattern::blink(
+    [LEVEL_MAX, 0],
+    [0, 0],
+    Duration::from_millis(180),
+    Duration::from_millis(180),
+    3,
+);
+```
+
+### Попеременное red/green
+
+```rust
+use common::drivers::led_indicator::constants::LEVEL_MAX;
+use common::drivers::led_indicator::pattern::LedPattern;
 use std::time::Duration;
 
 let pattern = LedPattern::alternate(
@@ -163,62 +205,59 @@ let pattern = LedPattern::alternate(
     3,
 )
 .final_levels([0, 0]);
-
-indicator.play_pattern(pattern)?;
 ```
 
-Такой паттерн:
-
-- 3 раза чередует красный и зелёный
-- не блокирует основной цикл
-- после завершения оставляет оба LED выключенными
-
-## Пример: ручная сборка паттерна
+### Пульсация
 
 ```rust
-use common::drivers::led_indicator::{LedPattern, RepeatMode, LEVEL_MAX};
+use common::drivers::led_indicator::constants::LEVEL_MAX;
+use common::drivers::led_indicator::pattern::LedPattern;
+use std::time::Duration;
+
+let pattern = LedPattern::pulse(
+    [LEVEL_MAX, 0],
+    Duration::from_millis(400),
+    Duration::from_millis(400),
+    2,
+);
+```
+
+### Ручная сборка
+
+```rust
+use common::drivers::led_indicator::constants::LEVEL_MAX;
+use common::drivers::led_indicator::pattern::{LedPattern, RepeatMode};
 use std::time::Duration;
 
 let pattern = LedPattern::<2>::new()
     .hold([LEVEL_MAX, 0], Duration::from_millis(120))
+    .transition([LEVEL_MAX, 0], [0, LEVEL_MAX], Duration::from_millis(600))
     .hold([0, LEVEL_MAX], Duration::from_millis(120))
-    .hold([0, 0], Duration::from_millis(120))
     .repeat(RepeatMode::Times(2))
-    .final_levels([LEVEL_MAX, 0]);
+    .final_levels([0, 0]);
 ```
 
-Подходит для точной анимации без factory-хелперов.
+## Demo bin
 
-## Пример: модель пульсации
+Для модуля есть отдельный бинарник:
 
-```rust
-use common::drivers::led_indicator::{LedPattern, LEVEL_MAX};
-use std::time::Duration;
-
-let pulse = LedPattern::pulse(
-    [LEVEL_MAX, 0],
-    Duration::from_millis(200),
-    Duration::from_millis(400),
-    2,
-);
-
-indicator.play_pattern(pulse)?;
+```bash
+cargo espflash flash --bin led_indicator_demo --monitor
 ```
 
-С цифровым backend'ом это выглядит как ступенчатое переключение. С PWM backend'ом тот же паттерн даст плавную пульсацию.
+Он демонстрирует:
+
+- статические состояния `red` и `green`
+- половинную яркость через PWM
+- `blink`
+- `alternate`
+- `pulse`
+- ручной `transition` с crossfade
 
 ## Что важно помнить
 
-- worker-поток только исполняет уже подготовленный паттерн
-- новый `set_levels(...)` или `play_pattern(...)` полностью заменяет предыдущий режим
-- логика приложения не должна делать `delay` ради LED-эффектов
-- лучше описывать желаемое состояние или готовый паттерн, а не дёргать GPIO вручную в основном цикле
-
-## Когда это полезно
-
-Подход удобен, когда:
-
-- основной цикл не должен зависеть от индикации
-- пара светодиодов логически работает как единый индикатор
-- нужны повторяемые feedback-эффекты
-- возможен переход с GPIO-led на PWM backend без переделки прикладной логики
+- worker применяет только уже подготовленные состояния и паттерны
+- `set_levels(...)` и `play_pattern(...)` полностью заменяют предыдущий режим
+- скорость и гладкость анимации зависят от `worker_tick`
+- цифровой backend показывает только on/off
+- PWM backend показывает уровни и переходы аппаратно

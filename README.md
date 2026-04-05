@@ -33,6 +33,7 @@
 
 - NFC через `PN532`
 - 4-разрядный дисплей `TM1637`
+- асинхронная LED-индикация с digital и PWM backend'ами
 - основной `app`-bin
 - отдельные demo-bin для проверки железа
 
@@ -109,6 +110,7 @@ cargo build --bin app
 cargo build --bin battery_tag_demo
 cargo build --bin service_tag_demo
 cargo build --bin display_demo
+cargo build --bin led_indicator_demo
 ```
 
 Форматирование:
@@ -143,6 +145,12 @@ Display demo:
 cargo espflash flash --bin display_demo --monitor
 ```
 
+LED indicator demo:
+
+```bash
+cargo espflash flash --bin led_indicator_demo --monitor
+```
+
 В проекте несколько binary target, поэтому `cargo espflash flash` нужно вызывать с явным `--bin ...`.
 
 ## Структура проекта
@@ -153,7 +161,14 @@ src/
     lib.rs
     drivers/
       mod.rs
-      led_indicator.rs
+      led_indicator/
+        mod.rs
+        constants.rs
+        backend.rs
+        controller.rs
+        digital.rs
+        pattern.rs
+        pwm.rs
       nfc_tag/
         mod.rs
         constants.rs
@@ -183,13 +198,16 @@ src/
 
     display_demo/
       main.rs
+
+    led_indicator_demo/
+      main.rs
 ```
 
 Что где лежит:
 
 - `src/common` — общий код
 - `src/common/drivers` — hardware-обёртки и кастомные драйвера
-- `src/common/drivers/led_indicator.rs` — универсальная асинхронная LED-индикация и паттерны
+- `src/common/drivers/led_indicator` — асинхронная LED-индикация, паттерны и backend'ы
 - `src/common/drivers/nfc_tag` — NFC driver, разбитый на sync/async/format/esp-idf слои
 - `src/common/utils` — общие утилиты и прикладные модели
 - `src/common/utils/kv_store.rs` — общий key-value формат `KV1`
@@ -200,11 +218,12 @@ src/
 - `src/bin/battery_tag_demo` — запись и проверка базовой структуры battery-tag
 - `src/bin/service_tag_demo` — запись и проверка базовой структуры service-tag
 - `src/bin/display_demo` — изолированный demo-таргет для TM1637
+- `src/bin/led_indicator_demo` — демонстрация digital/PWM LED-паттернов
 
 ## Полезные файлы
 
 - NFC wrapper: [src/common/drivers/nfc_tag/mod.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/nfc_tag/mod.rs)
-- LED indicator wrapper: [src/common/drivers/led_indicator.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/led_indicator.rs)
+- LED indicator wrapper: [src/common/drivers/led_indicator/mod.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/led_indicator/mod.rs)
 - Display wrapper: [src/common/drivers/segment_display.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/segment_display.rs)
 - KV store: [src/common/utils/kv_store.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/utils/kv_store.rs)
 - Документация по NFC: [docs/nfc_tag.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/nfc_tag.md)
