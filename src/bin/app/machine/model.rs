@@ -129,6 +129,7 @@ pub enum MachinePhase {
     AwaitingSessionId {
         battery_uid: Vec<u8>,
         battery: BatteryTag,
+        started_at: Instant,
         request_enqueued: bool,
     },
     Opening {
@@ -187,4 +188,12 @@ pub fn pair_from_remaining_seconds(remaining_seconds: u64) -> (u8, u8) {
 
 pub fn active_colon_timing() -> (Duration, Duration) {
     (ACTIVE_COLON_PERIOD, ACTIVE_COLON_ON_DURATION)
+}
+
+pub fn pair_from_charge(charge: u64, consumption_per_sec: u32) -> (u8, u8) {
+    if consumption_per_sec == 0 {
+        return pair_from_remaining_seconds(0);
+    }
+
+    pair_from_remaining_seconds(charge / u64::from(consumption_per_sec))
 }

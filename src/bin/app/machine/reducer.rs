@@ -113,10 +113,11 @@ fn handle_observed_tag_changed(state: &mut AppState, now: Instant, effects: &mut
     }
 }
 
-fn handle_session_id_allocated(state: &mut AppState, result: Result<u64, String>, now: Instant) {
+fn handle_session_id_allocated(state: &mut AppState, result: Result<u64, String>, _now: Instant) {
     let MachinePhase::AwaitingSessionId {
         battery_uid,
         battery,
+        started_at,
         request_enqueued: _,
     } = &state.phase
     else {
@@ -145,7 +146,7 @@ fn handle_session_id_allocated(state: &mut AppState, result: Result<u64, String>
             state.phase = MachinePhase::Opening {
                 battery_uid: battery_uid.clone(),
                 opened_battery,
-                opened_at: now,
+                opened_at: *started_at,
                 write_enqueued: false,
             };
         }
@@ -169,8 +170,19 @@ fn handle_nfc_write_finished(
             write_enqueued,
         } if battery_uid.as_slice() == expected_uid => match result {
             Ok(()) => {
-                let session = ActiveSession::new(battery_uid.clone(), opened_battery, *opened_at);
-                state.phase = MachinePhase::Running(session);
+                if state.switch_enabled {
+                    let session =
+                        ActiveSession::new(battery_uid.clone(), opened_battery, *opened_at);
+                    state.phase = MachinePhase::Running(session);
+                } else {
+                    let mut closed_battery = opened_battery.clone();
+                    closed_battery.close_session();
+                    state.phase = MachinePhase::Closing {
+                        battery_uid: battery_uid.clone(),
+                        closed_battery,
+                        write_enqueued: false,
+                    };
+                }
             }
             Err(_) => {
                 *write_enqueued = false;
@@ -263,6 +275,7 @@ fn reconcile(state: &mut AppState, now: Instant, effects: &mut Vec<AppEffect>) {
                         state.phase = MachinePhase::AwaitingSessionId {
                             battery_uid: uid.clone(),
                             battery: battery.clone(),
+                            started_at: now,
                             request_enqueued: false,
                         };
                         reconcile(state, now, effects);
