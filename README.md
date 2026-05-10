@@ -109,8 +109,9 @@ src/
 - `src/bin/app/machine` — бизнес-логика, события, эффекты и проекции UI.
 - `src/bin/app/storage` — sync/async доступ к NVS.
 
-Подробная документация по драйверам:
+Подробная документация по железу, драйверам и форматам:
 
+- [docs/wiring.md](docs/wiring.md)
 - [docs/nfc_tag.md](docs/nfc_tag.md)
 - [docs/kv_store.md](docs/kv_store.md)
 - [docs/segment_display.md](docs/segment_display.md)
