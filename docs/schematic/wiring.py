@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "wiring.svg"
 
-WIDTH = 1400
+WIDTH = 1460
 HEIGHT = 930
 
 POWER = "#c2410c"
@@ -75,18 +75,26 @@ def wire(points: list[tuple[int, int]], *, color: str, width: int = 3) -> None:
         line(x1, y1, x2, y2, color=color, width=width)
 
 
-def vertical_wire_with_jumps(x: int, y1: int, y2: int, jumps: list[int], *, color: str) -> None:
+def vertical_wire_with_jumps(
+    x: int,
+    y1: int,
+    y2: int,
+    jumps: list[int],
+    *,
+    color: str,
+    width: int = 3,
+) -> None:
     """Draw a vertical wire with small jump arcs at non-connected crossings."""
     current = y1
     for jump_y in sorted(jump for jump in jumps if y1 < jump < y2):
-        line(x, current, x, jump_y - 8, color=color, width=3)
+        line(x, current, x, jump_y - 8, color=color, width=width)
         add(
             f'<path d="M {x} {jump_y - 8} '
             f'Q {x + 14} {jump_y} {x} {jump_y + 8}" '
-            f'fill="none" stroke="{color}" stroke-width="3" stroke-linecap="round" />'
+            f'fill="none" stroke="{color}" stroke-width="{width}" stroke-linecap="round" />'
         )
         current = jump_y + 8
-    line(x, current, x, y2, color=color, width=3)
+    line(x, current, x, y2, color=color, width=width)
 
 
 def box(x: int, y: int, w: int, h: int, title: str, subtitle: str | None = None) -> None:
@@ -105,6 +113,13 @@ def dot(x: int, y: int, *, color: str) -> None:
 
 def terminal(x: int, y: int, *, color: str = BLACK) -> None:
     add(f'<circle cx="{x}" cy="{y}" r="4" fill="{color}" />')
+
+
+def power_input_stub(x: int, y: int, *, color: str, label_text: str, label_y_offset: int) -> None:
+    """Draw an explicit external power input stub for a rail."""
+    line(x - 26, y, x, y, color=color, width=4)
+    terminal(x - 26, y, color=color)
+    label(label_text, x - 34, y + label_y_offset, size=14, color=color, anchor="end")
 
 
 def resistor_vertical(x: int, y1: int, y2: int) -> None:
@@ -128,11 +143,12 @@ def resistor_vertical(x: int, y1: int, y2: int) -> None:
     line(x, y1 + 96, x, y2, color=I2C, width=3)
 
 
-def resistor_horizontal(x1: int, x2: int, y: int, *, color: str) -> None:
+def resistor_horizontal(x1: int, x2: int, y: int, *, color: str, right_color: str | None = None) -> None:
     """Draw one horizontal series resistor on a signal wire."""
+    right_color = right_color or color
     lead = 14
     line(x1, y, x1 + lead, y, color=color, width=3)
-    line(x2 - lead, y, x2, y, color=color, width=3)
+    line(x2 - lead, y, x2, y, color=right_color, width=3)
     points = [
         (x1 + lead, y),
         (x1 + lead + 12, y - 10),
@@ -167,12 +183,12 @@ def led_symbol(x: int, y: int, *, color: str) -> None:
 def latching_control_to_ground(x: int, y: int, ground_y: int) -> None:
     """Draw a latching switch/button from the signal node to GND."""
     terminal(x, y, color=SWITCH)
-    terminal(x + 86, y, color=GROUND)
-    line(x + 12, y, x + 34, y, color=SWITCH, width=3)
-    line(x + 58, y - 18, x + 38, y, color=BLACK, width=3)
-    line(x + 86, y, x + 86, ground_y, color=GROUND, width=3)
-    label("toggle switch / latching button", x + 43, y + 34, size=14, color=MUTED)
-    label("to GND", x + 102, y + 5, size=13, color=GROUND, anchor="start")
+    line(x, y, x + 38, y, color=SWITCH, width=3)
+    line(x + 62, y - 20, x + 42, y, color=BLACK, width=3)
+    line(x + 84, y, x + 100, y, color=GROUND, width=3)
+    line(x + 100, y, x + 100, ground_y, color=GROUND, width=3)
+    label("toggle switch / latching button", x + 50, y + 34, size=14, color=MUTED)
+    label("to GND", x + 116, y + 5, size=13, color=GROUND, anchor="start")
 
 
 def pin_text(value: str, x: int, y: int, *, side: str, color: str = BLACK) -> None:
@@ -212,18 +228,21 @@ def main() -> None:
 
     power_y = 125
     ground_y = 860
-    rail_x1 = 70
-    rail_x2 = 1330
+    rail_x1 = 110
+    power_bus_x = 1325
+    ground_bus_x = 1360
 
     # Shared rails. All modules connect to these rails through short stubs.
-    wire([(rail_x1, power_y), (rail_x2, power_y)], color=POWER, width=4)
+    wire([(rail_x1, power_y), (power_bus_x, power_y)], color=POWER, width=4)
+    power_input_stub(rail_x1, power_y, color=POWER, label_text="power in", label_y_offset=-12)
     label("3.3V", rail_x1 + 8, power_y - 16, size=18, color=POWER, anchor="start", weight="600")
-    wire([(rail_x1, ground_y), (rail_x2, ground_y)], color=GROUND, width=4)
+    wire([(rail_x1, ground_y), (ground_bus_x, ground_y)], color=GROUND, width=4)
+    power_input_stub(rail_x1, ground_y, color=GROUND, label_text="power in", label_y_offset=18)
     label("GND", rail_x1 + 8, ground_y + 32, size=18, color=GROUND, anchor="start", weight="600")
 
     # Component blocks.
-    esp_x, esp_y, esp_w, esp_h = 95, 190, 325, 630
-    right_x, right_w = 940, 315
+    esp_x, esp_y, esp_w, esp_h = 135, 190, 325, 630
+    right_x, right_w = 980, 315
     box(esp_x, esp_y, esp_w, esp_h, "ESP32-C3", "Super Mini")
     box(right_x, 185, right_w, 150, "PN532", "NFC reader, I2C mode")
     box(right_x, 385, right_w, 150, "TM1637", "4-digit display + colon")
@@ -310,21 +329,34 @@ def main() -> None:
     # Power and ground connections.
     wire([esp["3V3"], (rail_x1, esp["3V3"][1]), (rail_x1, power_y)], color=POWER)
     wire([esp["GND"], (rail_x1, esp["GND"][1]), (rail_x1, ground_y)], color=GROUND)
+    dot(rail_x1, power_y, color=POWER)
+    dot(rail_x1, ground_y, color=GROUND)
 
-    power_bus_x = 1305
-    ground_bus_x = 1330
-    wire([(power_bus_x, power_y), (power_bus_x, tm["VCC"][1])], color=POWER, width=4)
+    vertical_wire_with_jumps(
+        power_bus_x,
+        power_y,
+        tm["VCC"][1],
+        jumps=[pn["GND"][1]],
+        color=POWER,
+        width=4,
+    )
     wire([(ground_bus_x, ground_y), (ground_bus_x, pn["GND"][1])], color=GROUND, width=4)
-    for point in [pn["VCC"], tm["VCC"]]:
+    for point in [pn["VCC"]]:
         wire([point, (power_bus_x, point[1])], color=POWER)
-    for point in [pn["GND"], tm["GND"]]:
+        dot(power_bus_x, point[1], color=POWER)
+    wire([tm["VCC"], (power_bus_x, tm["VCC"][1])], color=POWER)
+    wire([pn["GND"], (ground_bus_x, pn["GND"][1])], color=GROUND)
+    for point in [tm["GND"]]:
         wire([point, (ground_bus_x, point[1])], color=GROUND)
+        dot(ground_bus_x, point[1], color=GROUND)
 
     # I2C signals and pull-ups.
     wire([esp["SDA"], pn["SDA"]], color=I2C)
     wire([esp["SCL"], pn["SCL"]], color=I2C)
     resistor_vertical(610, power_y, esp["SDA"][1])
     resistor_vertical(660, power_y, esp["SCL"][1])
+    dot(610, power_y, color=POWER)
+    dot(660, power_y, color=POWER)
     dot(610, esp["SDA"][1], color=I2C)
     dot(660, esp["SCL"][1], color=I2C)
     label("I2C pull-ups\n4.7k to 3.3V", 700, 170, size=14, anchor="start")
@@ -341,6 +373,7 @@ def main() -> None:
     wire([(635, esp["RED"][1]), (675, esp["RED"][1])], color=LED)
     led_symbol(675, esp["RED"][1], color=LED)
     wire([(719, esp["RED"][1]), (ground_bus_x, esp["RED"][1])], color=GROUND)
+    dot(ground_bus_x, esp["RED"][1], color=GROUND)
     label("red", 770, esp["RED"][1] - 14, size=13, color=MUTED, anchor="start")
 
     wire([esp["GREEN"], (535, esp["GREEN"][1])], color=LED)
@@ -348,6 +381,7 @@ def main() -> None:
     wire([(635, esp["GREEN"][1]), (675, esp["GREEN"][1])], color=LED)
     led_symbol(675, esp["GREEN"][1], color=LED)
     wire([(719, esp["GREEN"][1]), (ground_bus_x, esp["GREEN"][1])], color=GROUND)
+    dot(ground_bus_x, esp["GREEN"][1], color=GROUND)
     label("green", 770, esp["GREEN"][1] - 14, size=13, color=MUTED, anchor="start")
 
     # Activation input: external pull-up and a latching switch/button to GND.
@@ -362,11 +396,14 @@ def main() -> None:
         jumps=[esp["SDA"][1], esp["SCL"][1], esp["CLK"][1], esp["DIO"][1], esp["RED"][1], esp["GREEN"][1]],
         color=POWER,
     )
-    resistor_horizontal(pullup_power_x, pullup_resistor_end_x, pullup_y, color=POWER)
+    dot(pullup_power_x, power_y, color=POWER)
+    resistor_horizontal(pullup_power_x, pullup_resistor_end_x, pullup_y, color=POWER, right_color=SWITCH)
     wire([(pullup_resistor_end_x, pullup_y), (pullup_node_x, pullup_y), (pullup_node_x, esp["SWITCH"][1])], color=SWITCH)
     wire([esp["SWITCH"], button], color=SWITCH)
+    dot(pullup_node_x, esp["SWITCH"][1], color=SWITCH)
     label("external pull-up 10k", 870, pullup_y - 20, size=12, color=SWITCH)
     latching_control_to_ground(*button, ground_y)
+    dot(button[0] + 100, ground_y, color=GROUND)
 
     # PN532 reset is intentionally left open in the current wiring.
     line(pn["RST"][0], pn["RST"][1], pn["RST"][0], pn["RST"][1] + 24, color="#9ca3af", width=2)
