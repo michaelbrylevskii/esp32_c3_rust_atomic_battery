@@ -2,7 +2,7 @@
 
 ## Что это такое
 
-Модуль [`segment_display`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/segment_display/mod.rs) это high-level обёртка над `tm1637-embedded-hal` для 4-разрядного индикатора с физическим двоеточием между 2 и 3 разрядом.
+Модуль [`segment_display`](../src/common/drivers/segment_display/mod.rs) это high-level обёртка над `tm1637-embedded-hal` для 4-разрядного индикатора с физическим двоеточием между 2 и 3 разрядом.
 
 В проекте он закрывает типовые задачи:
 
@@ -395,7 +395,7 @@ loop {
 
 ## Что уже есть в проекте
 
-Пример использования находится в [src/bin/display_demo/main.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/bin/display_demo/main.rs#L1).
+Пример использования находится в [src/bin/display_demo/main.rs](../src/bin/display_demo/main.rs#L1).
 
 Там уже показаны:
 

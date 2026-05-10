@@ -1,7 +1,7 @@
 //! Универсальная асинхронная LED-индикация.
 //!
 //! Подробная документация на русском:
-//! [docs/led_indicator.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/led_indicator.md)
+//! [docs/led_indicator.md](../../../../docs/led_indicator.md)
 
 pub mod async_controller;
 pub mod backend;

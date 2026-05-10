@@ -2,7 +2,7 @@
 
 ## Что это такое
 
-Модуль [`kv_store`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/utils/kv_store.rs) это утилитарный слой для хранения типизированных key-value данных.
+Модуль [`kv_store`](../src/common/utils/kv_store.rs) это утилитарный слой для хранения типизированных key-value данных.
 
 Он используется как текстовый прикладной формат `KV1`.
 

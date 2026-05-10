@@ -1,7 +1,7 @@
 //! Утилитарное key-value хранилище для прикладных payload'ов проекта.
 //!
 //! Подробная документация на русском:
-//! [docs/kv_store.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/kv_store.md)
+//! [docs/kv_store.md](../../../docs/kv_store.md)
 
 use core::fmt;
 use std::string::String;

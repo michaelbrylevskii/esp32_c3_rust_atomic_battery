@@ -2,7 +2,7 @@
 
 ## Что это такое
 
-Модуль [`led_indicator`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/led_indicator/mod.rs) это набор слоёв для управления одним или несколькими светодиодами:
+Модуль [`led_indicator`](../src/common/drivers/led_indicator/mod.rs) это набор слоёв для управления одним или несколькими светодиодами:
 
 - backend применяет уровни к физическим каналам
 - pattern описывает шаги, переходы и повторения
@@ -191,7 +191,7 @@ PWM backend использует все уровни `0..=255` и поэтому
 
 ## Demo bin
 
-Проект содержит отдельный demo-бинарник [src/bin/led_indicator_demo/main.rs](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/bin/led_indicator_demo/main.rs).
+Проект содержит отдельный demo-бинарник [src/bin/led_indicator_demo/main.rs](../src/bin/led_indicator_demo/main.rs).
 
 Он показывает два независимых controller'а одновременно:
 

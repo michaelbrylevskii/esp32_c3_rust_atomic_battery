@@ -2,7 +2,7 @@
 
 ## Что это такое
 
-Модуль [`nfc_tag`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/drivers/nfc_tag/mod.rs) это high-level обёртка поверх:
+Модуль [`nfc_tag`](../src/common/drivers/nfc_tag/mod.rs) это high-level обёртка поверх:
 
 - `pn532` как транспорта и набора низкоуровневых команд
 - NTAG / Type 2 Tag как памяти страницами
@@ -11,7 +11,7 @@
 
 Прикладной key-value формат описан отдельным модулем:
 
-- [`common::utils::kv_store`](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/src/common/utils/kv_store.rs)
+- [`common::utils::kv_store`](../src/common/utils/kv_store.rs)
 
 Роли модулей:
 
@@ -333,6 +333,6 @@ for event in async_nfc.drain_events()? {
 
 ## Связанные документы
 
-- KV-формат: [docs/kv_store.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/kv_store.md)
-- LED indicator: [docs/led_indicator.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/led_indicator.md)
-- Segment display: [docs/segment_display.md](/mnt/data/Files/Projects/esp32_c3_rust_atomic_battery/docs/segment_display.md)
+- KV-формат: [kv_store.md](kv_store.md)
+- LED indicator: [led_indicator.md](led_indicator.md)
+- Segment display: [segment_display.md](segment_display.md)
