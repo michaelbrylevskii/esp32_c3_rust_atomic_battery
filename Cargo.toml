@@ -2,9 +2,11 @@
 name = "esp32_c3_rust_atomic_battery"
 version = "0.1.0"
 authors = ["Michael Brylevskii <michael.brylevskii@gmail.com>"]
+description = "ESP32-C3 Rust firmware for an NFC-based atomic battery RPG device, developed with substantial Codex assistance."
 edition = "2021"
 resolver = "2"
 rust-version = "1.82"
+license = "0BSD"
 
 [lib]
 name = "common"
