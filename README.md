@@ -181,6 +181,59 @@ Service tag:
 | `service_type` | string | сейчас `consumption_config` |
 | `consumption_per_sec` | `u32` | скорость потребления заряда в секунду |
 
+### Шаблоны payload
+
+Ниже приведён текстовый вид `KV1`, который лежит внутри NDEF payload. Его
+удобно использовать как эталон при отладке, логировании или ручной проверке
+содержимого метки.
+
+Базовая battery tag:
+
+```text
+KV1
+tag_type=S:battery
+capacity=U64:600000
+charge=U64:600000
+healthy=B:1
+dirty=B:0
+session_id=U64:0
+```
+
+Эквивалент через прикладной helper:
+
+```rust
+use common::utils::atomic_tags::BatteryTag;
+
+let battery = BatteryTag::new(600_000, 600_000)?;
+let store = battery.to_store()?;
+```
+
+Базовая service tag для настройки скорости потребления:
+
+```text
+KV1
+tag_type=S:service
+service_type=S:consumption_config
+consumption_per_sec=U32:1500
+```
+
+Эквивалент через прикладной helper:
+
+```rust
+use common::utils::atomic_tags::ServiceTag;
+
+let service = ServiceTag::new(1500)?;
+let store = service.to_store()?;
+```
+
+Готовые demo target записывают и сразу валидируют эти структуры на приложенной
+NFC-метке:
+
+```bash
+cargo espflash flash --bin battery_tag_demo --monitor
+cargo espflash flash --bin service_tag_demo --monitor
+```
+
 ## Настройка среды
 
 Проект рассчитан на `ESP32-C3`, то есть на RISC-V вариант ESP32. Для этого
