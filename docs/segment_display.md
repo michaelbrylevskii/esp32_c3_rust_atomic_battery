@@ -2,7 +2,7 @@
 
 ## Что это такое
 
-Модуль [`segment_display`](../src/common/drivers/segment_display/mod.rs) это high-level обёртка над `tm1637-embedded-hal` для 4-разрядного индикатора с физическим двоеточием между 2 и 3 разрядом.
+Модуль [`segment_display`](../src/common/drivers/segment_display/mod.rs) — высокоуровневая обёртка над `tm1637-embedded-hal` для 4-разрядного индикатора с физическим двоеточием между 2 и 3 разрядом.
 
 В проекте он закрывает типовые задачи:
 
@@ -17,14 +17,14 @@
 
 ## Что умеет модуль
 
-- Sync API через `SegmentDisplay4`
-- Async API через `AsyncSegmentDisplay4`
-- Настройка яркости
-- Поддержка короткого ASCII-текста
-- Поддержка бегущей строки
-- Отдельное управление двоеточием
-- Ограничение числа полных циклов бегущей строки
-- Импульсный режим двоеточия с настраиваемым периодом
+- синхронный API через `SegmentDisplay4`
+- асинхронный API через `AsyncSegmentDisplay4`
+- настройка яркости
+- поддержка короткого ASCII-текста
+- поддержка бегущей строки
+- отдельное управление двоеточием
+- ограничение числа полных циклов бегущей строки
+- импульсный режим двоеточия с настраиваемым периодом
 
 ## Важное ограничение по железу
 
@@ -61,7 +61,7 @@ pub struct IntFormat {
 
 ### `DisplayConfig`
 
-Настройки low-level TM1637 wrapper:
+Настройки низкоуровневой TM1637-обёртки:
 
 ```rust
 pub struct DisplayConfig {
@@ -72,8 +72,8 @@ pub struct DisplayConfig {
 
 Поля:
 
-- `brightness` это уровень яркости TM1637
-- `delay_us` это внутренний шаг протокольной задержки библиотеки `tm1637-embedded-hal`
+- `brightness` — уровень яркости TM1637
+- `delay_us` — внутренний шаг протокольной задержки библиотеки `tm1637-embedded-hal`
 
 ### `AsyncDisplayConfig`
 
@@ -88,8 +88,8 @@ pub struct AsyncDisplayConfig {
 
 Поля:
 
-- `worker_tick` это как часто worker пересчитывает анимацию и мигание
-- `thread_stack_size` это размер стека фоновой задачи
+- `worker_tick` — период пересчёта анимации и мигания в фоновой задаче
+- `thread_stack_size` — размер стека фоновой задачи
 
 Значения по умолчанию:
 
@@ -118,7 +118,7 @@ pub struct AsyncDisplayConfig {
 - нужно независимо мигать двоеточием
 - не хочется блокировать основной цикл приложения
 
-- `show_*` в async API меняют желаемое состояние кадра
+- `show_*` в асинхронном API меняют желаемое состояние кадра
 - новая команда заменяет старую
 - например, `start_scroll_text(...)` крутится до следующего `show_*` или нового `start_scroll_text(...)`
 
@@ -127,7 +127,7 @@ pub struct AsyncDisplayConfig {
 - `start_scroll_text_cycles(text, step_delay, cycles)`
 - `start_colon_pulse(initial_on, period, on_duration)`
 
-## Пример: sync API
+## Пример: синхронный API
 
 ```rust
 use common::drivers::segment_display::{
@@ -146,7 +146,7 @@ display.set_colon(true)?;
 display.show_int_pair(12, 34)?;
 ```
 
-## Пример: async API
+## Пример: асинхронный API
 
 ```rust
 use common::drivers::segment_display::{
@@ -177,7 +177,7 @@ display.start_colon_pulse(
 ```
 
 - число на дисплей подаёт код приложения
-- worker только обслуживает двоеточие и анимации
+- фоновая задача только обслуживает двоеточие и анимации
 - двоеточие может жить в том же ритме, что и обновление числа в основном коде
 
 ## Вывод целого числа
@@ -228,14 +228,14 @@ display.show_int_pair(12, 34)?;
 
 ## Управление двоеточием
 
-### Sync
+### Синхронный API
 
 ```rust
 display.set_colon(true)?;
 display.toggle_colon()?;
 ```
 
-### Async
+### Асинхронный API
 
 ```rust
 display.set_colon(true)?;
@@ -250,7 +250,7 @@ display.start_colon_pulse(
 
 - двоеточие хранится отдельно от основного кадра
 - поэтому можно сменить число или текст, не теряя режим двоеточия
-- в async API мигание полностью живёт в worker-задаче
+- в асинхронном API мигание полностью живёт в фоновой задаче
 
 ## Короткий текст
 
@@ -290,7 +290,7 @@ display.show_error()?;
 display.start_scroll_error(Duration::from_millis(250))?;
 ```
 
-или в sync API:
+или в синхронном API:
 
 ```rust
 display.scroll_error_once(Duration::from_millis(250))?;
@@ -298,7 +298,7 @@ display.scroll_error_once(Duration::from_millis(250))?;
 
 ## Бегущая строка
 
-### Sync
+### Синхронный API
 
 ```rust
 display.scroll_text_once("Error", Duration::from_millis(250))?;
@@ -308,7 +308,7 @@ display.scroll_text_once("Error", Duration::from_millis(250))?;
 
 - пока строка крутится, текущий поток занят
 
-### Async
+### Асинхронный API
 
 ```rust
 display.start_scroll_text("no bat", Duration::from_millis(250))?;
@@ -320,7 +320,7 @@ display.start_scroll_text("no bat", Duration::from_millis(250))?;
 - строка крутится в фоне
 - основной код продолжает работать
 
-## Типичный сценарий для async wrapper
+## Типичный сценарий для асинхронной обёртки
 
 Паттерн использования обычно такой:
 
@@ -383,13 +383,13 @@ loop {
 В этом случае полезно проверить:
 
 - `last_worker_error()`
-- питание и wiring дисплея
+- питание и подключение дисплея
 - состояние GPIO
 
 ## Практические замечания
 
-- Для твоего проекта используется TM1637 по двум GPIO, а не через I2C peripheral ESP32
-- `delay_us` в builder-конфиге это шаг внутреннего TM1637-протокола, а не пользовательская пауза между кадрами
+- В проекте TM1637 подключён по двум GPIO, а не через I2C peripheral ESP32
+- `delay_us` в builder-конфиге — шаг внутреннего TM1637-протокола, а не пользовательская пауза между кадрами
 - Для длительных анимаций лучше использовать `AsyncSegmentDisplay4`
 - Для разовых простых выводов `SegmentDisplay4` тоже остаётся нормальным вариантом
 
@@ -411,7 +411,7 @@ loop {
 
 Если совсем коротко:
 
-- `SegmentDisplay4` это простой sync wrapper
-- `AsyncSegmentDisplay4` это buffered + background worker вариант
-- для реальной логики приложения чаще удобнее async API
-- для 4-разрядного TM1637 ограничения по длине текста неизбежны, поэтому бегущая строка это штатный путь
+- `SegmentDisplay4` — синхронная обёртка
+- `AsyncSegmentDisplay4` — асинхронная обёртка с буфером состояния и фоновой задачей
+- для реальной логики приложения чаще удобнее асинхронный API
+- для 4-разрядного TM1637 ограничения по длине текста неизбежны, поэтому бегущая строка — штатный путь

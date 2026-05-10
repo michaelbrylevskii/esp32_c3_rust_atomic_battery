@@ -1,14 +1,14 @@
-# `led_indicator`: асинхронная LED-индикация, паттерны и backend'ы
+# `led_indicator`: асинхронная LED-индикация
 
 ## Что это такое
 
-Модуль [`led_indicator`](../src/common/drivers/led_indicator/mod.rs) это набор слоёв для управления одним или несколькими светодиодами:
+Модуль [`led_indicator`](../src/common/drivers/led_indicator/mod.rs) — набор слоёв для управления одним или несколькими LED-каналами:
 
 - backend применяет уровни к физическим каналам
-- pattern описывает шаги, переходы и повторения
-- async controller исполняет желаемый режим в фоне
+- паттерн описывает шаги, переходы и повторения
+- асинхронный контроллер исполняет выбранный режим в фоновой задаче
 
-Модель уровней единая для всех backend'ов:
+Модель уровней единая для всех backend:
 
 - `0` — канал выключен
 - `255` — канал полностью включён
@@ -33,7 +33,7 @@ src/common/drivers/led_indicator/
 - `async_controller.rs` — `AsyncLedController`, `AsyncLedConfig`, `AsyncLedError`
 - `easing.rs` — кривые переходов
 - `pattern.rs` — `LedPattern`, `LedPatternStep`, `RepeatMode`
-- `digital_backend.rs` — цифровой backend для GPIO-led
+- `digital_backend.rs` — цифровой backend для GPIO LED
 - `pwm_backend.rs` — PWM backend на базе `LEDC`
 - `constants.rs` — общие константы вроде `LEVEL_MAX`
 
@@ -60,7 +60,7 @@ src/common/drivers/led_indicator/
 
 ### `async_controller::AsyncLedConfig`
 
-Настройки фонового worker'а:
+Настройки фоновой задачи:
 
 ```rust
 pub struct AsyncLedConfig {
@@ -113,7 +113,7 @@ pub struct AsyncLedConfig {
 
 ### `digital_backend::DigitalLedGroup`
 
-Цифровой backend для обычных GPIO-светодиодов.
+Цифровой backend для обычных GPIO LED.
 
 Любой уровень больше нуля трактуется как "включено".
 
@@ -123,13 +123,13 @@ PWM backend для LEDC.
 
 Он принимает:
 
-- общий `LEDC timer`, который остаётся живым внутри backend'а
+- общий `LEDC timer`, который остаётся живым внутри backend
 - массив уже созданных `LedcDriver`
 - массив полярностей каналов
 
-## Как работает async controller
+## Как работает асинхронный контроллер
 
-`AsyncLedController` хранит желаемый режим и выполняет его в фоне:
+`AsyncLedController` хранит желаемый режим и выполняет его в фоновой задаче:
 
 - `set_levels([..])` задаёт статические уровни
 - `play_pattern(pattern)` запускает паттерн
@@ -139,7 +139,7 @@ PWM backend для LEDC.
 
 ## Digital backend
 
-Пример для двух обычных GPIO-led:
+Пример для двух обычных GPIO LED:
 
 ```rust
 use common::drivers::led_indicator::backend::LedPolarity;
@@ -158,7 +158,7 @@ indicator.set_levels([LEVEL_MAX, 0])?;
 
 ## PWM backend
 
-Пример для двух LEDC-каналов на общей PWM-timer:
+Пример для двух LEDC-каналов на общем PWM timer:
 
 ```rust
 use common::drivers::led_indicator::backend::LedPolarity;
@@ -187,13 +187,13 @@ let group = PwmLedGroup::new(
 let indicator = AsyncLedController::<2>::new(group, AsyncLedConfig::default())?;
 ```
 
-PWM backend использует все уровни `0..=255` и поэтому поддерживает плавные переходы и пульсации не только на уровне модели, но и на железе.
+PWM backend использует все уровни `0..=255`, поэтому плавные переходы и пульсации применяются аппаратно.
 
-## Demo bin
+## Demo target
 
-Проект содержит отдельный demo-бинарник [src/bin/led_indicator_demo/main.rs](../src/bin/led_indicator_demo/main.rs).
+Проект содержит отдельный demo target [src/bin/led_indicator_demo/main.rs](../src/bin/led_indicator_demo/main.rs).
 
-Он показывает два независимых controller'а одновременно:
+Он показывает два независимых контроллера одновременно:
 
 - on-board LED на `GPIO8` через `DigitalLedGroup` с `LedPolarity::ActiveLow`
 - внешний красный и зелёный LED на `GPIO0` и `GPIO1` через `PwmLedGroup`
@@ -323,7 +323,7 @@ cargo espflash flash --bin led_indicator_demo --monitor
 
 ## Что важно помнить
 
-- worker применяет только уже подготовленные состояния и паттерны
+- фоновая задача применяет только уже подготовленные состояния и паттерны
 - `set_levels(...)` и `play_pattern(...)` полностью заменяют предыдущий режим
 - скорость и гладкость анимации зависят от `worker_tick`
 - цифровой backend показывает только on/off

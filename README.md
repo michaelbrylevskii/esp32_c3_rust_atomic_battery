@@ -10,13 +10,13 @@ NFC-метки для настройки скорости потребления
 
 ## Возможности
 
-- Основной runtime `app` для ESP32-C3 Super Mini.
+- Основной binary target `app` для ESP32-C3 Super Mini.
 - NFC-обмен с PN532 по I2C.
 - Чтение и запись прикладных NFC-меток через компактный KV-формат.
 - 4-разрядный TM1637-дисплей с двоеточием.
-- Асинхронная LED-индикация с digital и PWM backend'ами.
+- Асинхронная LED-индикация с digital/PWM backend.
 - Асинхронная запись NFC и NVS, чтобы бизнес-цикл не блокировался на I/O.
-- Отдельные demo binary target для NFC, дисплея и LED-индикации.
+- Отдельные demo target для NFC, дисплея и LED-индикации.
 
 ## Железо
 
@@ -36,15 +36,15 @@ NFC-метки для настройки скорости потребления
 
 Текущая распиновка основного приложения:
 
-| Компонент | Назначение | GPIO |
+| Компонент | Сигнал | GPIO |
 | --- | --- | --- |
-| PN532 | SDA | `GPIO3` |
-| PN532 | SCL | `GPIO4` |
-| TM1637 | CLK | `GPIO5` |
-| TM1637 | DIO | `GPIO6` |
-| Red LED | output | `GPIO0` |
-| Green LED | output | `GPIO1` |
-| Switch | input, pull-up | `GPIO10` |
+| `PN532` | `SDA` | `GPIO3` |
+| `PN532` | `SCL` | `GPIO4` |
+| `TM1637` | `CLK` | `GPIO5` |
+| `TM1637` | `DIO` | `GPIO6` |
+| Красный LED | output, active-high | `GPIO0` |
+| Зелёный LED | output, active-high | `GPIO1` |
+| Тумблер | input, pull-up | `GPIO10` |
 | On-board LED | output, active-low | `GPIO8` |
 
 Для I2C нужны внешние pull-up резисторы на SDA/SCL, обычно `4.7k` к `3.3V`.
@@ -97,17 +97,17 @@ src/
 
 Основные зоны ответственности:
 
-- `src/common/drivers/nfc_tag` — PN532 wrapper, NDEF/TLV/KV чтение и запись,
-  sync API, async worker и ESP-IDF I2C-конфигурация.
-- `src/common/drivers/segment_display` — TM1637 wrapper, форматирование чисел,
+- `src/common/drivers/nfc_tag` — обёртка над PN532, NDEF/TLV/KV чтение и запись,
+  синхронный API, асинхронная фоновая задача и ESP-IDF I2C-конфигурация.
+- `src/common/drivers/segment_display` — обёртка над TM1637, форматирование чисел,
   пар чисел, текста, бегущей строки и управление двоеточием.
-- `src/common/drivers/led_indicator` — универсальная LED-индикация, backend'ы,
-  паттерны, easing и асинхронный контроллер.
+- `src/common/drivers/led_indicator` — универсальная LED-индикация, backend,
+  паттерны, easing-функции и асинхронный контроллер.
 - `src/common/utils/kv_store.rs` — общий KV-формат для данных на NFC-метках.
 - `src/common/utils/atomic_tags.rs` — прикладные структуры battery/service tag.
-- `src/bin/app/hardware.rs` — wiring железа и сборка runtime-зависимостей.
+- `src/bin/app/hardware.rs` — подключение оборудования и сборка зависимостей runtime.
 - `src/bin/app/machine` — бизнес-логика, события, эффекты и проекции UI.
-- `src/bin/app/storage` — sync/async доступ к NVS.
+- `src/bin/app/storage` — синхронный и асинхронный доступ к NVS.
 
 Подробная документация по железу, драйверам и форматам:
 
@@ -121,8 +121,8 @@ src/
 
 Основное приложение построено как лёгкий событийный цикл. Бизнес-логика не
 пишет напрямую в железо и не ждёт завершения NFC/NVS-операций. Вместо этого она
-обрабатывает события, обновляет состояние и отдаёт эффекты во внешние async
-обёртки.
+обрабатывает события, обновляет состояние и отдаёт эффекты во внешние
+асинхронные обёртки.
 
 Источники событий:
 
@@ -317,7 +317,7 @@ cargo fmt
 
 ## Прошивка
 
-В проекте несколько binary target, поэтому binary target нужно указывать явно.
+В проекте несколько binary target, поэтому нужный target указывается явно.
 
 Основное приложение:
 
@@ -325,32 +325,32 @@ cargo fmt
 cargo espflash flash --bin app --monitor
 ```
 
-Demo для записи и проверки battery tag:
+Demo target для записи и проверки battery tag:
 
 ```bash
 cargo espflash flash --bin battery_tag_demo --monitor
 ```
 
-Demo для записи и проверки service tag:
+Demo target для записи и проверки service tag:
 
 ```bash
 cargo espflash flash --bin service_tag_demo --monitor
 ```
 
-Demo дисплея:
+Demo target дисплея:
 
 ```bash
 cargo espflash flash --bin display_demo --monitor
 ```
 
-Demo LED-индикации:
+Demo target LED-индикации:
 
 ```bash
 cargo espflash flash --bin led_indicator_demo --monitor
 ```
 
 Если команда запускается без `--bin`, `cargo-espflash` не имеет однозначного
-основного binary target в проекте с несколькими бинарниками.
+основного binary target в проекте с несколькими исполняемыми target.
 
 ## Demo target
 
@@ -360,7 +360,7 @@ cargo espflash flash --bin led_indicator_demo --monitor
 `service_tag_demo` записывает и валидирует сервисную метку с параметром
 `consumption_per_sec`.
 
-`display_demo` демонстрирует основные возможности TM1637 wrapper:
+`display_demo` демонстрирует основные возможности обёртки над TM1637:
 
 - вывод целых чисел;
 - вывод пары чисел;
@@ -368,7 +368,7 @@ cargo espflash flash --bin led_indicator_demo --monitor
 - статический текст;
 - бегущую строку.
 
-`led_indicator_demo` демонстрирует LED controller:
+`led_indicator_demo` демонстрирует LED-контроллер:
 
 - active-high внешние LED;
 - active-low on-board LED;

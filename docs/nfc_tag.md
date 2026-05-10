@@ -1,8 +1,8 @@
-# `nfc_tag`: high-level NFC-обёртка над PN532
+# `nfc_tag`: высокоуровневая NFC-обёртка над PN532
 
 ## Что это такое
 
-Модуль [`nfc_tag`](../src/common/drivers/nfc_tag/mod.rs) это high-level обёртка поверх:
+Модуль [`nfc_tag`](../src/common/drivers/nfc_tag/mod.rs) — высокоуровневая обёртка поверх:
 
 - `pn532` как транспорта и набора низкоуровневых команд
 - NTAG / Type 2 Tag как памяти страницами
@@ -15,9 +15,9 @@
 
 Роли модулей:
 
-- NFC driver отвечает за чтение/запись payload через PN532
+- NFC-обёртка отвечает за чтение и запись payload через PN532
 - `KvStore` отвечает за текстовый формат `KV1`
-- прикладные модели вроде battery/service tag строятся поверх `KvStore`
+- прикладные модели battery/service tag строятся поверх `KvStore`
 
 ## Структура модуля
 
@@ -35,8 +35,8 @@ src/common/drivers/nfc_tag/
 
 Что где лежит:
 
-- `sync_nfc.rs` — синхронный high-level API над `Pn532`
-- `async_nfc.rs` — async worker как обёртка над sync API
+- `sync_nfc.rs` — синхронный высокоуровневый API над `Pn532`
+- `async_nfc.rs` — асинхронная фоновая задача поверх синхронного API
 - `format.rs` — NDEF/TLV encode/decode
 - `esp_idf.rs` — helper-конструкторы для `esp-idf-svc`
 - `constants.rs` — именованные значения протокола и default-конфигов
@@ -50,8 +50,8 @@ src/common/drivers/nfc_tag/
 - читать NDEF Text Record
 - превращать payload в `KvStore`
 - записывать `KvStore` обратно на метку
-- держать async worker для постоянного опроса PN532
-- давать `esp-idf` helper для быстрого создания reader'а через I2C
+- держать асинхронную фоновую задачу для постоянного опроса PN532
+- давать `esp-idf` helper для быстрого создания PN532 reader через I2C
 
 ## Что именно хранится на метке
 
@@ -79,7 +79,7 @@ pub struct TagInfo {
 
 ### `NfcTag`
 
-Синхронный high-level wrapper над `Pn532`.
+Синхронная высокоуровневая обёртка над `Pn532`.
 
 Основные методы:
 
@@ -132,15 +132,15 @@ pub struct NfcInitConfig {
 
 Схема работы:
 
-- worker сам опрашивает `PN532`
-- worker кэширует последнюю увиденную метку
-- main loop читает только `snapshot()`
+- фоновая задача сама опрашивает `PN532`
+- фоновая задача кэширует последнюю увиденную метку
+- основной цикл читает только `snapshot()`
 - запись ставится в очередь команд
 - завершение записи возвращается отдельным событием через `drain_events()`
 
 ### `AsyncNfcConfig`
 
-Настройки async worker:
+Настройки асинхронной фоновой задачи:
 
 ```rust
 pub struct AsyncNfcConfig {
@@ -158,11 +158,11 @@ pub struct AsyncNfcConfig {
 - `removal_debounce = 1200 ms`
 - `thread_stack_size = 8192`
 
-`removal_debounce` важен для живого железа: он защищает от ложного “метка пропала” при кратковременных сбоях PN532.
+`removal_debounce` важен для реального железа: он защищает от ложного события “метка пропала” при кратковременных сбоях PN532.
 
 ### `AsyncNfcSnapshot`
 
-Снимок текущего состояния async worker'а:
+Снимок текущего состояния асинхронной фоновой задачи:
 
 ```rust
 use common::drivers::nfc_tag::async_nfc::{
@@ -197,14 +197,14 @@ Payload хранится в трёх вариантах:
 
 ### `AsyncNfcEvent`
 
-События async worker:
+События асинхронной фоновой задачи:
 
 - `WriteFinished { expected_uid, store, result }`
 
 Обычный сценарий такой:
 
 - код ставит запись в очередь через `enqueue_write_kv_store_for_tag(...)`
-- worker выполняет запись
+- фоновая задача выполняет запись
 - основной цикл забирает результат из `drain_events()`
 
 ### `nfc_tag::esp_idf`
@@ -221,7 +221,7 @@ Payload хранится в трёх вариантах:
 - `esp_idf::new_default(i2c, sda, scl)`
 - `esp_idf::new_async_default(i2c, sda, scl, worker_config)`
 
-## Типичный сценарий: sync API
+## Типичный сценарий: синхронный API
 
 ### 1. Создать `NfcTag` для `esp-idf`
 
@@ -270,7 +270,7 @@ store.insert_bool("enabled", true)?;
 nfc.write_kv_store(&store)?;
 ```
 
-## Типичный сценарий: async API
+## Типичный сценарий: асинхронный API
 
 ```rust
 use common::drivers::nfc_tag::async_nfc::{AsyncNfcConfig, AsyncNfcTag};
@@ -290,7 +290,7 @@ if let Some(tag) = snapshot.tag {
 }
 ```
 
-### Async запись с очередью команд
+### Асинхронная запись с очередью команд
 
 ```rust
 use common::drivers::nfc_tag::async_nfc::{AsyncNfcConfig, AsyncNfcEvent, AsyncNfcTag};
@@ -327,9 +327,9 @@ for event in async_nfc.drain_events()? {
 - модуль не пытается сохранять чужие NDEF records
 - при `write_kv_store()` пользовательская NDEF-область переписывается целиком
 - если на метке лежит другой текстовый NDEF, но не в формате `KV1`, разбор payload вернёт ошибку формата
-- если на метке лежит нестандартный payload, async snapshot может вернуть `ReadError(...)`
+- если на метке лежит нестандартный payload, асинхронный snapshot может вернуть `ReadError(...)`
 
-Проще говоря: это хороший storage-слой для своего проекта, а не универсальный редактор любых NFC-меток.
+Проще говоря: это слой хранения для своего проекта, а не универсальный редактор любых NFC-меток.
 
 ## Связанные документы
 
