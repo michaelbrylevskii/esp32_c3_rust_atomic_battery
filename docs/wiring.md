@@ -5,35 +5,18 @@
 
 ## Общая схема
 
-```mermaid
-flowchart LR
-    ESP["ESP32-C3 Super Mini"]
-    PN532["PN532 NFC reader<br/>I2C mode"]
-    TM1637["TM1637 4-digit display<br/>with center colon"]
-    RED["Red LED<br/>through resistor"]
-    GREEN["Green LED<br/>through resistor"]
-    SW["Activation switch<br/>to GND"]
-    PULLUPS["External I2C pull-ups<br/>4.7k to 3.3V"]
+![Схема подключения](assets/wiring-schematic.svg)
 
-    ESP -- "GPIO3 / SDA" --> PN532
-    ESP -- "GPIO4 / SCL" --> PN532
-    ESP -- "GPIO5 / CLK" --> TM1637
-    ESP -- "GPIO6 / DIO" --> TM1637
-    ESP -- "GPIO0" --> RED
-    ESP -- "GPIO1" --> GREEN
-    SW -- "GPIO10<br/>internal pull-up" --> ESP
-    PULLUPS -- "SDA + SCL" --> PN532
+Это не breadboard-вид, а принципиальная схема подключения. Она лучше подходит
+для документации, потому что явно показывает питание, землю, подтяжки I2C,
+резисторы светодиодов и логику тумблера.
 
-    ESP --- VCC["3.3V"]
-    ESP --- GND["GND"]
-    VCC --- PN532
-    VCC --- TM1637
-    GND --- PN532
-    GND --- TM1637
-    GND --- RED
-    GND --- GREEN
-    GND --- SW
-```
+Для полноценного breadboard-вида лучше использовать отдельный инструмент:
+
+- `Fritzing` — удобен именно для макетных плат и проводов “как на столе”.
+- `KiCad` — лучше для нормальных принципиальных схем и последующей PCB.
+- `Wokwi` — удобен для симуляции, но ESP32-C3 + конкретные PN532/TM1637-модули
+  могут потребовать упрощённые модели.
 
 ## Таблица подключений
 
